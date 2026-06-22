@@ -11,7 +11,9 @@ mkpath.(values(PATHS))
 @testset "tests" begin
     # ----- Test the module itself. -----
     @testset "Aqua tests" begin
-        Aqua.test_all(Archeion)
+        # ParamIO is declared in [deps] only to carry its git-url source (a transitive dep
+        # of DataVault, not used directly here) until it lands in the General registry.
+        Aqua.test_all(Archeion; stale_deps=(ignore=[:ParamIO],))
     end
     # ----- Test files in the "test" directory. -----
     test_args = copy(ARGS)
