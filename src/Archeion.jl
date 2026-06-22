@@ -9,6 +9,7 @@ module Archeion
 
 using TOML: TOML
 using Dates: Dates
+using Markdown: Markdown
 using LibGit2: LibGit2
 using Pinax: Pinax
 using DataVault: DataVault
