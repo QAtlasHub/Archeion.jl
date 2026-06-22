@@ -17,8 +17,7 @@ function build_index(
         meta = String[]
         r.bookmark && push!(meta, "★")
         isempty(r.tags) || push!(meta, join(r.tags, " · "))
-        (isempty(r.git_commit) || r.git_commit == "unknown") ||
-            push!(meta, "@" * first(r.git_commit, 7))
+        r.git_commit == "unknown" || push!(meta, "@" * first(r.git_commit, 7))
         return (;
             title=r.title,
             href=r.gallery,

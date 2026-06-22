@@ -47,15 +47,22 @@ end
 """
     read_record(dir) -> Record
 
-Read a [`Record`](@ref) from `dir/record.toml`.
+Read a [`Record`](@ref) from `dir/record.toml`. Raises with the offending field and file
+path if a required field (`id`/`project`/`title`/`gallery`) is missing.
 """
 function read_record(dir::AbstractString)
-    d = TOML.parsefile(joinpath(dir, "record.toml"))
+    path = joinpath(dir, "record.toml")
+    d = TOML.parsefile(path)
+    req(k) = if haskey(d, k)
+        d[k]
+    else
+        error("read_record: missing required field `$(k)` in `$(path)`")
+    end
     return Record(;
-        id=d["id"],
-        project=d["project"],
-        title=d["title"],
-        gallery=d["gallery"],
+        id=req("id"),
+        project=req("project"),
+        title=req("title"),
+        gallery=req("gallery"),
         summary=get(d, "summary", ""),
         date=get(d, "date", ""),
         tags=String.(get(d, "tags", String[])),

@@ -44,7 +44,9 @@ commit + dirty flag, `Project.toml`, `Manifest.toml`, the Julia version, an opti
 `config` file, and a runnable `reproduce.sh` recipe.
 
 With `strict=true`, a dirty git tree raises (refuse to record a non-reproducible run);
-otherwise the dirty state is recorded and a warning is emitted.
+otherwise the dirty state is recorded and a warning is emitted. A `config` path that does
+not exist is warned about (not silently dropped), and a `config` whose filename would
+collide with the environment snapshot (`Project.toml`/`Manifest.toml`) raises.
 """
 function capture_repro(
     srcdir::AbstractString,
@@ -69,8 +71,20 @@ function capture_repro(
     has_manifest ||
         @warn "capture_repro: no Manifest.toml in `$(srcdir)` — environment is NOT pinned (Project.toml alone is insufficient for Julia reproducibility)."
 
-    if config !== nothing && isfile(config)
-        cp(config, joinpath(repro, basename(config)); force=true)
+    # Capture the optional config file. Guard against a name collision with the env
+    # snapshot, and warn (don't silently drop) when a path is given but missing.
+    config_name = nothing
+    if config !== nothing
+        if !isfile(config)
+            @warn "capture_repro: config path `$(config)` does not exist — not captured."
+        elseif basename(config) in ("Project.toml", "Manifest.toml")
+            error(
+                "capture_repro: config filename `$(basename(config))` collides with the environment snapshot; rename the config file.",
+            )
+        else
+            cp(config, joinpath(repro, basename(config)); force=true)
+            config_name = basename(config)
+        end
     end
 
     open(joinpath(repro, "reproduce.sh"), "w") do io
@@ -84,7 +98,7 @@ function capture_repro(
             println(io, "git checkout ", sha)
         end
         println(io, "julia --project=. -e 'using Pkg; Pkg.instantiate()'")
-        config === nothing || println(io, "# config used: ", basename(config))
+        config_name === nothing || println(io, "# config used: ", config_name)
         return nothing
     end
 

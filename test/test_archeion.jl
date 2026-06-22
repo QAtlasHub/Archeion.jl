@@ -42,6 +42,12 @@ end
     @test r.bookmark == false
 end
 
+@testset "read_record errors clearly on a missing required field" begin
+    dir = mktempdir()
+    write(joinpath(dir, "record.toml"), "project = \"p\"\ntitle = \"t\"\ngallery = \"g\"\n")  # no id
+    @test_throws ErrorException Archeion.read_record(dir)
+end
+
 @testset "build_index renders cards + bookmark + short commit" begin
     site = mktempdir()
     recs = [
@@ -95,6 +101,36 @@ end
     dest = mktempdir()
     b = @test_logs (:warn,) match_mode = :any Archeion.capture_repro(src, dest)
     @test b.has_manifest == false
+end
+
+@testset "capture_repro config handling (capture / missing-warn / collision-error)" begin
+    src = mktempdir()
+    write(joinpath(src, "Project.toml"), "name = \"X\"\n")
+    write(joinpath(src, "Manifest.toml"), "# manifest\n")
+
+    # present config -> captured + referenced in reproduce.sh
+    cfgdir = mktempdir()
+    cfg = joinpath(cfgdir, "sweep.toml")
+    write(cfg, "x = 1\n")
+    dest = mktempdir()
+    Archeion.capture_repro(src, dest; config=cfg)
+    @test isfile(joinpath(dest, "repro", "sweep.toml"))
+    @test occursin(
+        "# config used: sweep.toml", read(joinpath(dest, "repro", "reproduce.sh"), String)
+    )
+
+    # missing config path -> warns, not captured, no reproduce.sh comment
+    dest2 = mktempdir()
+    b = @test_logs (:warn,) match_mode = :any Archeion.capture_repro(
+        src, dest2; config=joinpath(cfgdir, "nope.toml")
+    )
+    @test b isa Archeion.ReproBundle
+    @test !occursin("# config used", read(joinpath(dest2, "repro", "reproduce.sh"), String))
+
+    # config filename collides with the env snapshot -> error (no silent overwrite)
+    bad = joinpath(mktempdir(), "Project.toml")
+    write(bad, "name = \"bad\"\n")
+    @test_throws ErrorException Archeion.capture_repro(src, mktempdir(); config=bad)
 end
 
 # git-backed paths: skipped where the `git` CLI is unavailable (used only to build the

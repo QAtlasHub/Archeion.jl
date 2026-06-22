@@ -2,7 +2,7 @@
 # Archeion pre-commit — block secrets from entering git history (gitleaks).
 # Activated per-clone with:  git config core.hooksPath .githooks
 # Defense-in-depth alongside GitHub push protection; catches secrets BEFORE they leave the machine.
-set -uo pipefail
+set -euo pipefail
 
 GL="$(command -v gitleaks || echo "$HOME/.local/bin/gitleaks")"
 if [ ! -x "$GL" ]; then
