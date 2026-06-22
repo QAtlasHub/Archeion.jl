@@ -44,38 +44,81 @@ function _ledger_md_table(rows; limit::Int=50)
     return String(take!(io))
 end
 
-# Build one (study, run) summary as a Pinax document — provenance table + the DataVault
-# config snapshot (verbatim TOML) + the ledger — and render it through Pinax so the page
-# gets Pinax's CSS/UI (consistent with the gallery + cross-run index). Self-contained
-# (assets=:inline). Returns the written index.html path.
+# Split a config snapshot into its leading comment header (the human-readable description —
+# job notes, advisor concerns, scope) and the rest (the actual TOML). The header renders as
+# prose (`@desc`); the TOML stays verbatim in a code block.
+function _config_header_and_body(config::AbstractString)
+    lines = split(config, '\n'; keepempty=true)
+    i = firstindex(lines)
+    header = String[]
+    while i <= lastindex(lines)
+        l = strip(lines[i])
+        if startswith(l, "#")
+            push!(header, strip(replace(lines[i], r"^\s*#+\s?" => "")))
+            i += 1
+        elseif isempty(l)
+            i += 1                      # skip blanks inside/after the header block
+        else
+            break                       # first real TOML line
+        end
+    end
+    return (strip(join(header, "\n")), strip(join(lines[i:end], '\n')))
+end
+
+# Build one (study, run) summary as a Pinax document. The run is the `@page`; its provenance,
+# DataVault config, and ledger are separate `@section`s (so it reads as the experiment's
+# record, ready to gain figure sections when a run has figures). Rendered through Pinax for
+# its CSS/UI, self-contained (assets=:inline). Returns the written index.html path.
 function _write_run_summary(dest; project, run, info, rows, config::AbstractString="")
     done = count(r -> get(r, "status", "") == "done", rows)
-    md = IOBuffer()
-    println(md, "## Provenance\n")
-    println(md, "| field | value |")
-    println(md, "| --- | --- |")
-    println(md, "| project | `", project, "` |")
-    println(md, "| run | `", run, "` |")
-    println(md, "| keys | ", length(rows), " (", done, " done) |")
-    println(md, "| julia | ", info.julia_version, " |")
-    println(md, "| host | ", info.hostname, " |")
-    println(md, "| created | ", info.created_at, " |")
-    println(md, "| datavault | ", info.datavault_version, " |")
-    if !isempty(config)
-        println(md, "\n## DataVault config\n")
-        println(md, "```toml\n", strip(config), "\n```")
+    prov = string(
+        "| field | value |\n| --- | --- |\n",
+        "| project | `",
+        project,
+        "` |\n",
+        "| run | `",
+        run,
+        "` |\n",
+        "| keys | ",
+        length(rows),
+        " (",
+        done,
+        " done) |\n",
+        "| julia | ",
+        info.julia_version,
+        " |\n",
+        "| host | ",
+        info.hostname,
+        " |\n",
+        "| created | ",
+        info.created_at,
+        " |\n",
+        "| datavault | ",
+        info.datavault_version,
+        " |\n",
+    )
+    header, toml_body = _config_header_and_body(config)
+    config_md = if isempty(strip(config))
+        "_(no config snapshot)_"
+    elseif isempty(header)
+        string("```toml\n", toml_body, "\n```")
+    else
+        string(header, "\n\n```toml\n", toml_body, "\n```")
     end
-    if !isempty(rows)
-        println(md, "\n## Ledger (", length(rows), " rows, ", done, " done)\n")
-        println(md, _ledger_md_table(rows))
-    end
-    body = Markdown.parse(String(take!(md)))
+    ledger_md =
+        isempty(rows) ? "_(no ledger yet — run `build_ledger`)_" : _ledger_md_table(rows)
 
     Pinax.reset!(; title=string(project, " / ", run))
     Pinax.@pinaxsetup assets = :inline
-    Pinax.@page :summary "Summary" begin
-        Pinax.@section :record "Run record" begin
-            Pinax.@desc body
+    Pinax.@page :record string(project, " / ", run) begin
+        Pinax.@section :provenance "Provenance" begin
+            Pinax.@desc Markdown.parse(prov)
+        end
+        Pinax.@section :config "DataVault config" begin
+            Pinax.@desc Markdown.parse(config_md)
+        end
+        Pinax.@section :ledger "Ledger" begin
+            Pinax.@desc Markdown.parse(ledger_md)
         end
     end
     return Pinax.render(; out=dest)
