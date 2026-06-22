@@ -1,0 +1,15 @@
+# Archeion deploy config — copy to `deploy.local.toml` (gitignored) and fill in.
+# Prefer leaving `password` empty here and setting ARCHEION_FTP_PASSWORD in your env.
+#
+# Lolipop has no SSH, so the registry site is published over FTPS (lftp). Find the FTP
+# host/account in the Lolipop user panel; point `remote_dir` at the document root of the
+# (private) subdomain you serve the registry from, e.g. data.sota-shimozono.com.
+# Make it private with Lolipop's access-restriction panel, or Archeion.write_basic_auth.
+
+[ftp]
+host = "ftp.lolipop.jp"          # your Lolipop FTP server host
+user = "your-ftp-account"        # FTP account name
+password = ""                    # leave empty; use ARCHEION_FTP_PASSWORD instead
+remote_dir = "/path/to/subdomain/docroot"
+tls = true                       # FTPS
+tls_verify = true                # set false only if the host's cert won't validate
