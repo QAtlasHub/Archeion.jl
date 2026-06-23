@@ -7,10 +7,10 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "db:init": "node src/db/init.js"
+    "test": "node --test"
   },
   "dependencies": {
-    "better-sqlite3": "^11.3.0",
+    "better-sqlite3": "^12.2.0",
     "markdown-it": "^14.1.0"
   },
   "engines": {
