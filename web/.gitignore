@@ -1,0 +1,18 @@
+# runtime data (ingested) — never commit; lives on panza / deploy target
+data/
+*.db
+*.db-*
+*.sqlite
+
+# auxiliary binaries (e.g. the vendored node for Lolipop CGI)
+bin/
+
+# node
+node_modules/
+npm-debug.log*
+
+# secrets / local config
+*.local.toml
+*.local.json
+.env
+.env.*

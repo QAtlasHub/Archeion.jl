@@ -4,11 +4,14 @@ version = "0.1.0"
 authors = ["sota shimozono <shimozono-sota631@g.ecc.u-tokyo.ac.jp>"]
 
 [deps]
+DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
 DataVault = "23f5f8f6-b4da-40ee-8c72-c53b6c5de94f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 LibGit2 = "76f85450-5226-5b5a-8eaa-529ad045b433"
+Markdown = "d6f4376e-aef5-505a-96c1-9c027394607a"
 ParamIO = "938a3ac2-d340-473c-bcf1-88af577e4ccf"
 Pinax = "e782a80a-1ac9-479e-ba2b-0f3433ef5b4f"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
 [sources]
@@ -23,11 +26,14 @@ Pinax = {rev = "main", url = "https://github.com/sotashimozono/Pinax.jl"}
 
 [compat]
 Aqua = "0.8"
+DBInterface = "2"
 DataVault = "0.7"
 Dates = "1"
 LibGit2 = "1"
+Markdown = "1"
 ParamIO = "0.3"
-Pinax = "0.27, 0.28"
+Pinax = "0.27 - 0.30"
+SQLite = "1"
 TOML = "1"
 Test = "1"
 julia = "1.12"

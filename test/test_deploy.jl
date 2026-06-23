@@ -38,7 +38,7 @@ end
 @testset "deploy: lftp script is well-formed" begin
     t = Archeion.DeployTarget("ftp.example.com", "acct", "secret", "/web/data", true, true)
     s = Archeion._lftp_script(t, "/tmp/site"; delete=true)
-    @test occursin("open ftps://ftp.example.com", s)
+    @test occursin("open ftp://ftp.example.com", s)   # explicit FTPS (ftp:// + ssl-force), not implicit ftps://
     @test occursin("user acct secret", s)
     @test occursin("mirror -R --delete", s)
     @test occursin("/web/data", s)

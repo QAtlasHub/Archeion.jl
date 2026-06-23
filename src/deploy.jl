@@ -82,13 +82,19 @@ end
 # the password appears only inside this script (written to a 0600 temp file by `deploy`),
 # never in process arguments.
 function _lftp_script(t::DeployTarget, site::AbstractString; delete::Bool=true)
-    scheme = t.tls ? "ftps" : "ftp"
+    # Explicit FTPS (FTPES) over port 21 via `ftp://` + ssl-force. NOT `ftps://`, which lftp
+    # treats as implicit FTPS on port 990 — Lolipop doesn't serve that and it times out.
     return """
     set ftp:ssl-force $(t.tls)
+    set ftp:ssl-protect-data $(t.tls)
     set ssl:verify-certificate $(t.tls_verify)
-    open $(scheme)://$(t.host)
+    set ftp:passive-mode true
+    set net:timeout 30
+    set net:max-retries 2
+    set net:reconnect-interval-base 5
+    open ftp://$(t.host)
     user $(t.user) $(t.password)
-    mirror -R$(delete ? " --delete" : "") --verbose $(site) $(t.remote_dir)
+    mirror -R$(delete ? " --delete" : "") --parallel=4 --verbose $(site) $(t.remote_dir)
     bye
     """
 end
