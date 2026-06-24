@@ -57,6 +57,7 @@ export function figureCard(f, bset, extraCls = "") {
       <span class="imp">${stars(f.importance || 0)}</span>
       <a class="rt" href="/r/${rid(f.record_id)}">${esc(f.record_title || f.record_id)}</a>
       <a class="dl" href="${esc(figUrl(f.path))}" download title="download">⤓</a>
+      <button type="button" class="embed-copy" data-embed="${esc(f.id)}" title="copy embed code ![[…]] for a structure note">⧉</button>
       ${bookmarkForm("figure", f.id, bset)}</figcaption></figure>`;
 }
 

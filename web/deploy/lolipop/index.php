@@ -65,10 +65,10 @@ if (!empty($meta['headers'])) {
 }
 // Security headers (the daemon sets these in server.js; set them here for the CGI path too).
 header('X-Content-Type-Options: nosniff');
-header('X-Frame-Options: DENY');
+header('X-Frame-Options: SAMEORIGIN'); // composer refs pane iframes Archeion (same-origin)
 header('Referrer-Policy: same-origin');
 // Dynamic pages must never be cached: after a write the POST 303-redirects to the record GET,
 // and a cached/bfcache copy would show the pre-write page ("tag added but not reflected").
 header('Cache-Control: no-store, max-age=0');
-header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'");
+header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action 'self'; base-uri 'none'");
 echo $body;

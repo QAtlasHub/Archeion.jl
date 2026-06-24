@@ -3,6 +3,10 @@
   --card: #fff; --accent: #3b6db5; --mark: #fde68a; --r: 10px;
 }
 * { box-sizing: border-box; }
+/* KaTeX lays out super/subscripts with display:table-cell struts that the global border-box reset
+   corrupts (the ^exponent drops to the next line). Restore content-box for its spans; KaTeX's own
+   .fbox/.angl border-box rules are more specific so they still win. */
+.katex, .katex * { box-sizing: content-box; }
 body { margin: 0; color: var(--fg); background: var(--bg);
   font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif; }
 a { color: var(--accent); text-decoration: none; }
@@ -106,10 +110,21 @@ h3 { font-size: .8rem; color: var(--muted); margin: 1.2rem 0 .5rem; }
 .notes-sec { margin: 1rem 0; }
 .notes { display: flex; flex-direction: column; gap: .6rem; max-width: 760px; }
 .note { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: .6rem .8rem; }
-.note-head { display: flex; align-items: baseline; gap: .5rem; font-size: .8rem; }
+.note-head { display: flex; align-items: center; gap: .5rem; font-size: .8rem; }
+.note-headl { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; min-width: 0; }
+.note-tools { margin-left: auto; display: flex; align-items: center; gap: .4rem; flex: none; }
+/* edit · archive · pin = one consistent pill group in the top-right of each card */
+.note-edit-link, .note-arch button, .note-pin button {
+  display: inline-flex; align-items: center; line-height: 1; white-space: nowrap; cursor: pointer;
+  border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px;
+  font: inherit; font-size: .76rem; padding: .24rem .66rem; }
+.note-edit-link:hover, .note-arch button:hover, .note-pin button:hover { border-color: var(--accent); color: var(--fg); text-decoration: none; }
 .note-title { font-weight: 600; }
 .note-scope { color: var(--accent); }
-.note-when { margin-left: auto; }
+.note-open { color: var(--accent); white-space: nowrap; }
+.note-when { white-space: nowrap; }
+.note-add-head { font-size: .82rem; font-weight: 600; }
+.note-add-head .muted { font-weight: normal; }
 .note-body { font-size: .9rem; }
 .note-body > p:first-child { margin-top: .2rem; }
 .note-body > p:last-child { margin-bottom: 0; }
@@ -127,6 +142,180 @@ h3 { font-size: .8rem; color: var(--muted); margin: 1.2rem 0 .5rem; }
 .note-del { margin: 0 0 0 auto; }
 .note-del button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; opacity: .5; }
 .note-del button:hover { opacity: 1; color: #c0392b; }
+.note-arch, .note-pin { margin: 0; } /* pill look comes from the shared .note-tools group above */
+.note.archived { opacity: .72; background: #fafaf8; }
+.note.archived:hover { opacity: 1; }
+/* the "open" note view (/note/:id): action pills + a comments/annotations thread */
+.nv-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: 0 0 1rem; }
+.nv-btn { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 999px; font-size: .8rem; padding: .3rem .8rem; }
+.nv-btn:hover { border-color: var(--accent); text-decoration: none; }
+.nv-disc { margin-top: 2rem; max-width: 820px; }
+.nv-disc h2 { font-size: 1.15rem; }
+.nv-comments { display: flex; flex-direction: column; gap: .6rem; margin-bottom: 1rem; }
+.nv-comment { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: .5rem .8rem; }
+.nv-cmeta { font-size: .75rem; margin-bottom: .2rem; }
+.nv-cbody { font-size: .92rem; }
+.nv-cbody > :first-child { margin-top: 0; } .nv-cbody > :last-child { margin-bottom: 0; }
+.nv-cform { display: flex; flex-direction: column; gap: .4rem; max-width: 760px; }
+.nv-cform textarea { font: inherit; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); width: 100%; box-sizing: border-box; }
+.nv-cform button { align-self: flex-start; cursor: pointer; font: inherit; font-size: .85rem; padding: .35rem .85rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.nv-cform button:hover { border-color: var(--accent); }
+
+/* structure notes: pin / show, ![[embeds]], the embed-copy button, and the advisor present view */
+.note.pinned { border-color: #eac54f; background: #fffdf5; }
+.note-show { color: var(--accent); font-size: .8rem; }
+.note.pinned .note-pin button { border-color: #eac54f; color: var(--fg); }
+.embed-copy { border: none; background: none; color: var(--muted); cursor: pointer; font-size: .9rem; opacity: .6; padding: 0 .2rem; }
+.embed-copy:hover { opacity: 1; color: var(--accent); }
+.embed-copy.saved { color: #2e7d32; opacity: 1; }
+.embed-fig { margin: 0; text-align: center; }
+.embed-fig img { max-width: 100%; max-height: 60vh; border: 1px solid var(--line); border-radius: var(--r); background: #fafafa; }
+.embed-fig figcaption { font-size: .85rem; color: var(--muted); margin-top: .3rem; }
+.embed-bad { color: #c0392b; font-family: monospace; }
+.pinned-sec, .allnotes-sec { margin: 1.3rem 0; }
+.pinned-sec > h3 { margin-bottom: .5rem; }
+/* "all notes" heading + filter share one row; the filter sits at the right of that row */
+.allnotes-head { display: flex; align-items: center; gap: 1rem; margin-bottom: .5rem; max-width: 760px; }
+.allnotes-head h3 { margin: 0; }
+.note-filter { margin-left: auto; width: min(360px, 55%); box-sizing: border-box; padding: .4rem .85rem;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--card); font: inherit; }
+.note-filter:focus { outline: 2px solid #7dd3fc; outline-offset: 1px; border-color: #bae6fd; }
+.note-hidden { display: none; }
+.archived-sec { margin: 1.3rem 0; max-width: 760px; }
+.archived-sec > summary { cursor: pointer; color: var(--muted); font-size: .85rem; padding: .3rem 0; list-style: none; }
+.archived-sec > summary::-webkit-details-marker { display: none; }
+.archived-sec > summary::before { content: "▸ "; }
+.archived-sec[open] > summary::before { content: "▾ "; }
+.archived-sec[open] > summary { margin-bottom: .5rem; }
+/* advisor PRESENT view — a clean single page, print-friendly. The header MATCHES the home header
+   (same metrics/brand/search-pill) so a standalone /show looks like a real Archeion page. */
+.present-head { display: flex; align-items: center; gap: 1rem; padding: .6rem 1.1rem; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 10; }
+.present-head .brand { font-weight: 700; color: var(--fg); letter-spacing: .02em; text-decoration: none; }
+.present-head .search { margin-left: auto; } /* push search + nav to the right, as on home */
+.present-nav { display: flex; align-items: center; gap: .8rem; font-size: .85rem; }
+.present-head a { color: var(--accent); text-decoration: none; }
+.present-head a:hover { text-decoration: underline; }
+.present-crumb { color: var(--muted); }
+.present-body main { padding: 0; } /* the reading column (.present-wrap) carries its own padding */
+.present-bare .present-wrap { padding-top: 1.2rem; } /* chrome-free preview: no header → less top gap */
+.present-wrap { max-width: 820px; margin: 0 auto; padding: 2rem 1.4rem 4rem; }
+.present h1 { font-size: 1.8rem; margin: 0 0 .5rem; }
+.present-meta { color: var(--muted); font-size: .9rem; margin: 0 0 .7rem; }
+.present-desc { margin: 0 0 1.2rem; padding: .6rem .9rem; background: var(--card); border-left: 3px solid var(--accent); border-radius: 4px; }
+.present-desc > :first-child { margin-top: 0; } .present-desc > :last-child { margin-bottom: 0; }
+.present .md { font-size: 1rem; line-height: 1.7; }
+.present .md h2 { text-transform: none; letter-spacing: 0; font-size: 1.3rem; color: var(--fg); margin: 1.8rem 0 .6rem; }
+.present .md h3 { font-size: 1.1rem; color: var(--fg); }
+.present .figgrid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.present-foot { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; text-align: center; }
+@media print { .present-foot, .present-head { display: none; } .embed-fig img { max-height: none; } }
+
+/* structure-note composer (/compose) — editor + LIVE preview both visible; refs = a half-screen
+   panel (real figures) you keep open while mentioning */
+.make-sn { font-size: .8rem; font-weight: normal; border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; padding: .2rem .7rem; margin-left: .6rem; vertical-align: middle; }
+.make-sn:hover { background: var(--accent); color: #fff; text-decoration: none; }
+.cmp-body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.cmp-top { display: flex; align-items: center; gap: 1rem; padding: .5rem 1rem; border-bottom: 1px solid var(--line); flex: none; }
+.cmp-top .brand { font-weight: 600; color: var(--fg); }
+.cmp-top .cmp-h { color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-top-actions { margin-left: auto; display: flex; align-items: center; gap: .6rem; flex: none; }
+.cmp-save { cursor: pointer; font: inherit; padding: .35rem 1.1rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 999px; }
+.cmp-save:hover { background: #2f5a98; }
+.cmp { flex: 1; display: flex; min-height: 0; position: relative; }
+.cmp-edit { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cmp-toolbar { display: flex; align-items: center; gap: .6rem; padding: .4rem .8rem; border-bottom: 1px solid var(--line); flex: none; }
+.cmp-refs, .cmp-preview-btn { cursor: pointer; font: inherit; font-size: .8rem; padding: .25rem .8rem; border: 1px solid var(--accent); color: var(--accent); background: var(--card); border-radius: 999px; }
+.cmp-refs:hover, .cmp-preview-btn:hover { background: var(--accent); color: #fff; }
+.cmp-edit #cmp-form { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: .8rem; }
+.cmp-titlein { font: inherit; font-size: 1.1rem; font-weight: 600; padding: .4rem .2rem; border: none; border-bottom: 1px solid var(--line); margin-bottom: .4rem; }
+.cmp-titlein:focus { outline: none; border-bottom-color: var(--accent); }
+.cmp-imp { font-size: .8rem; color: var(--muted); margin-bottom: .5rem; }
+.cmp-fallback { flex: 1; width: 100%; min-height: 200px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85rem; line-height: 1.6; padding: .6rem; border: 1px solid var(--line); border-radius: 8px; resize: none; }
+/* the CodeMirror 6 editor (Obsidian-style live preview over raw markdown) */
+.cmp-cm { flex: 1; min-height: 240px; display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.cmp-cm .cm-editor { flex: 1; height: 100%; }
+.cmp-cm .cm-scroller { overflow: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9rem; line-height: 1.65; }
+.cmp-cm .cm-content { padding: .7rem; }
+.cmp-cm .cm-focused { outline: none; }
+.cm-math { padding: 0 .1rem; }
+.cm-embed { text-decoration: none; color: inherit; cursor: pointer; vertical-align: middle; }
+.cm-embed-figure { display: inline-flex; flex-direction: column; max-width: 360px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--card); margin: .15rem 0; }
+.cm-embed-figure:hover { border-color: var(--accent); }
+.cm-embed-figure img { max-width: 100%; max-height: 240px; object-fit: contain; background: #fafafa; display: block; }
+.cm-embed-cap { font-size: .72rem; color: var(--muted); padding: .2rem .45rem; }
+.cm-embed-section, .cm-embed-record { display: inline-flex; align-items: center; gap: .45rem; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: .25rem .6rem; background: var(--card); margin: .15rem 0; }
+.cm-embed-section:hover, .cm-embed-record:hover { border-color: var(--accent); }
+.cm-embed-record img { width: 40px; height: 30px; object-fit: cover; border-radius: 4px; }
+.cm-embed-ico { color: var(--accent); }
+.cm-embed-t { font-weight: 600; }
+.cm-embed-src { color: var(--muted); font-size: .8rem; }
+.cm-embed-missing { color: #c0392b; font-family: monospace; }
+.cm-wikilink { color: var(--accent); text-decoration: underline; cursor: pointer; }
+/* server /show embed blocks: figure flows into columns; section folds; page pops up */
+.embed-figl { display: inline-block; vertical-align: top; max-width: 320px; margin: .3rem .5rem .3rem 0; text-decoration: none; color: inherit; }
+.embed-figl:hover .embed-fig img { border-color: var(--accent); }
+.embed-open { color: var(--accent); }
+.embed-secfold { border: 1px solid var(--line); border-radius: 8px; margin: .5rem 0; background: var(--card); }
+.embed-secfold > summary { cursor: pointer; display: flex; align-items: center; gap: .45rem; padding: .4rem .7rem; list-style: none; }
+.embed-secfold > summary::-webkit-details-marker { display: none; }
+.embed-secfold > summary::before { content: "▸"; color: var(--muted); }
+.embed-secfold[open] > summary::before { content: "▾"; }
+.embed-secfold .embed-ico { color: var(--accent); }
+.embed-secfold .embed-t { font-weight: 600; }
+.embed-secfold .embed-src { margin-left: auto; color: var(--accent); font-size: .85rem; }
+.embed-frame { width: 100%; height: 65vh; border: 0; border-top: 1px solid var(--line); display: block; }
+.embed-page { display: inline-block; vertical-align: top; max-width: 380px; border: 1px solid var(--line); border-radius: 8px; padding: .4rem .7rem; background: var(--card); margin: .4rem 0; }
+.embed-page:hover { border-color: var(--accent); }
+.embed-page-t { display: inline-flex; align-items: center; gap: .4rem; text-decoration: none; color: inherit; }
+.embed-page-t .embed-ico { color: var(--accent); }
+.embed-page-t .embed-t { font-weight: 600; }
+.embed-page-t .embed-src { color: var(--accent); font-size: .8rem; }
+.embed-page-meta { font-size: .78rem; color: var(--muted); margin-top: .25rem; }
+.embed-page-toc { margin-top: .35rem; font-size: .8rem; }
+.embed-page-toc > summary { cursor: pointer; color: var(--muted); }
+.embed-page-toc ul { margin: .3rem 0 0; padding-left: 1.1rem; }
+.embed-page-toc .toc-l3 { margin-left: 1rem; color: var(--muted); list-style: circle; }
+.embed-modal { display: none; }
+.embed-modal:target { display: flex; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; }
+.embed-modal-bg { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.embed-modal-box { position: relative; width: min(92vw, 1000px); height: 88vh; background: #fff; border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+.embed-modal-bar { display: flex; align-items: center; gap: 1rem; padding: .4rem .8rem; border-bottom: 1px solid var(--line); font-size: .85rem; }
+.embed-modal-bar > span { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.embed-modal-bar a { color: var(--accent); text-decoration: none; }
+.embed-modal-x { font-size: 1.1rem; }
+.embed-modal-frame { flex: 1; width: 100%; border: 0; }
+.cmp-actions { display: flex; align-items: center; gap: 1rem; margin-top: .5rem; flex: none; }
+.cmp-actions button { cursor: pointer; font: inherit; padding: .4rem 1.2rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 999px; }
+.cmp-show { cursor: pointer; font: inherit; font-size: .8rem; padding: .25rem .8rem; border: 1px solid var(--accent); color: var(--accent); background: var(--card); border-radius: 999px; text-decoration: none; }
+.cmp-show:hover { background: var(--accent); color: #fff; }
+.cmp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; margin-bottom: .5rem; }
+.cmp-tags { font: inherit; font-size: .85rem; padding: .3rem .55rem; border: 1px solid var(--line); border-radius: 8px; flex: 1; min-width: 160px; }
+.cmp-desc { font: inherit; font-size: .85rem; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 8px; resize: vertical; flex-basis: 100%; width: 100%; }
+.note-desc { font-size: .82rem; margin-top: .15rem; }
+/* refs = a flex sibling that pushes/resizes the editor (CM6 reflows); holds a live-Archeion iframe */
+.cmp-pick { flex: none; width: 0; overflow: hidden; border-left: 1px solid var(--line); background: var(--card);
+  display: flex; flex-direction: column; transition: width .2s ease; }
+.cmp.refs-open .cmp-pick { width: var(--refs-w, min(55%, 680px)); } /* --refs-w set by dragging the splitter */
+.cmp.dragging .cmp-pick { transition: none; } /* instant while dragging */
+.cmp.dragging { user-select: none; cursor: col-resize; }
+.cmp.dragging .cmp-frame { pointer-events: none; } /* so the iframe can't swallow the drag's mousemove */
+.cmp-splitter { display: none; flex: none; width: 6px; cursor: col-resize; background: var(--line); }
+.cmp.refs-open .cmp-splitter { display: block; }
+.cmp-splitter:hover, .cmp.dragging .cmp-splitter { background: var(--accent); }
+.cmp-pick-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; font-size: .72rem; color: var(--muted); padding: .4rem .6rem; border-bottom: 1px solid var(--line); flex: none; }
+.cmp-refs-close { cursor: pointer; border: none; background: none; font-size: 1rem; color: var(--muted); }
+.cmp-frame { flex: 1; width: 100%; border: 0; }
+/* the right pane shows ONE view at a time: refs (default) or preview */
+.cmp-preview-frame { display: none; }
+.cmp.show-preview .cmp-refs-frame { display: none; }
+.cmp.show-preview .cmp-preview-frame { display: block; }
+.ph-preview { display: none; }
+.cmp.show-preview .ph-refs { display: none; }
+.cmp.show-preview .ph-preview { display: inline; }
+.cmp-pick-open { margin-left: auto; color: var(--accent); text-decoration: none; font-size: .75rem; }
+@media (max-width: 900px) {
+  .cmp.refs-open .cmp-pick { position: absolute; inset: 0; width: 100%; z-index: 20; }
+}
 .figcard img { width: 100%; height: 150px; object-fit: contain; background: #fafafa; display: block; border-bottom: 1px solid var(--line); }
 .figcard figcaption { padding: .5rem .6rem; font-size: .8rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .figcard .rt { color: var(--muted); }

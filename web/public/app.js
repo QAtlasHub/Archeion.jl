@@ -235,7 +235,66 @@
     if (!document.querySelector(".figgrid .fig-hidden")) btn.remove(); // nothing left → drop the button
   });
 
+  // /notes "all notes" filter — hide non-matching cards in that section as you type (instant, no reload)
+  document.addEventListener("input", (e) => {
+    const inp = e.target.closest(".note-filter");
+    if (!inp) return;
+    const q = inp.value.trim().toLowerCase();
+    const sec = inp.closest("section") || document;
+    sec.querySelectorAll(".note").forEach((card) => {
+      card.classList.toggle("note-hidden", !!q && !card.textContent.toLowerCase().includes(q));
+    });
+  });
+
+  // a figure's embed code (![[id]]): inside the composer's refs iframe → add it to the open note;
+  // otherwise (normal browsing) → copy to clipboard.
+  const inComposerFrame = window.top !== window.self;
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest(".embed-copy");
+    if (!b) return;
+    e.preventDefault();
+    const code = "![[" + (b.dataset.embed || "") + "]]";
+    if (inComposerFrame) {
+      try { window.parent.postMessage({ type: "arx-embed", code }, location.origin); flash(b); } catch (_) { /* ignore */ }
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(code).then(() => flash(b)).catch(() => {});
+    }
+  });
+
+  // --- structure-note composer (only present on /compose) ---
+  const cmp = document.querySelector(".cmp");
+  if (cmp) {
+    // the right pane shows EITHER refs (live-Archeion iframe; its ⧉/add buttons postMessage embeds)
+    // OR preview (the CURRENT edits, no save). The header buttons (outside .cmp) switch it. Preview
+    // POSTs the live form fields into the named iframe via a hidden form → reflects unsaved edits.
+    const pForm = document.getElementById("cmp-preview-form");
+    const mForm = document.getElementById("cmp-form");
+    document.querySelector(".cmp-refs")?.addEventListener("click", () => { cmp.classList.add("refs-open", "show-refs"); cmp.classList.remove("show-preview"); });
+    document.querySelector(".cmp-preview-btn")?.addEventListener("click", () => {
+      cmp.classList.add("refs-open", "show-preview"); cmp.classList.remove("show-refs");
+      if (pForm && mForm) { // copy live edits (title/body/meta) into the hidden form, then render
+        for (const n of ["title", "body", "importance", "tags", "description"]) {
+          const dst = pForm.querySelector(`[name="${n}"]`), src = mForm.querySelector(`[name="${n}"]`);
+          if (dst && src) dst.value = src.value;
+        }
+        pForm.submit(); // → POST /api/note/preview into iframe[name=cmp-preview-frame]
+      }
+    });
+    cmp.querySelector(".cmp-refs-close")?.addEventListener("click", () => cmp.classList.remove("refs-open"));
+    // drag the splitter to resize refs ↔ editor. The splitter tracks the mouse exactly (--refs-w =
+    // distance from the right edge to the cursor); rAF-throttled for smoothness; while dragging the
+    // iframe's pointer-events are off (CSS) so it can't swallow mousemove (was the "one-way" feel).
+    const splitter = cmp.querySelector(".cmp-splitter");
+    if (splitter) {
+      let dragging = false, raf = 0, x = 0;
+      const apply = () => { raf = 0; const r = cmp.getBoundingClientRect(); cmp.style.setProperty("--refs-w", Math.min(Math.max(r.right - x, 280), r.width - 320) + "px"); };
+      window.addEventListener("mousemove", (e) => { if (!dragging) return; x = e.clientX; if (!raf) raf = requestAnimationFrame(apply); });
+      splitter.addEventListener("mousedown", (e) => { dragging = true; cmp.classList.add("dragging"); e.preventDefault(); });
+      window.addEventListener("mouseup", () => { if (dragging) { dragging = false; cmp.classList.remove("dragging"); } });
+    }
+  }
+
   window.addEventListener("popstate", () => navSwap(location.href, false)); // back/forward → re-swap
   document.documentElement.classList.add("js"); // CSS then hides the now-redundant "set" buttons
-  console.log("[archeion] app.js loaded (v12 — refactor: atomic modules)");
+  console.log("[archeion] app.js loaded (v34 — notes: open view + comments, quick-note description)");
 })();

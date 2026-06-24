@@ -83,3 +83,11 @@ export function removeTodo(db, id) {
   db.prepare("DELETE FROM project_todos WHERE id = ?").run(id);
   if (p) touchProject(db, p.project);
 }
+// idempotent set (vs toggle) — the LLM-channel "check off this todo" write-back. Returns true if found.
+export function setTodoDone(db, id, done) {
+  const p = db.prepare("SELECT project FROM project_todos WHERE id = ?").get(id);
+  if (!p) return false;
+  db.prepare("UPDATE project_todos SET done = ? WHERE id = ?").run(done ? 1 : 0, id);
+  touchProject(db, p.project);
+  return true;
+}

@@ -6,7 +6,39 @@
 // Aligns in spirit with Pinax's agent.json (data, not pixels; status-aware).
 import { projectMeta } from "./projects.js";
 import { recordTags, recordRuns, recordComments } from "./records.js";
-import { notesForDisplay } from "./notes.js";
+import { notesForDisplay, parseMentions, resolveMentions } from "./notes.js";
+
+// Related PAST experiments elsewhere in the registry — the LLM's "have we done something like this?"
+// memory. Deterministic relatedness (RAG dropped): shared tags, explicit note [[mentions]], and a
+// shared DataVault run (same computed data). Each hit carries a `why` so the LLM knows the link.
+export function relatedRecords(db, project, { limit = 20 } = {}) {
+  const why = {};
+  const add = (id, reason) => { if (id) (why[id] ||= new Set()).add(reason); };
+  // (a) shared tags: this project's record tags + project tags → records in OTHER projects
+  const myTags = new Set([
+    ...db.prepare("SELECT DISTINCT t.name FROM record_tags rt JOIN tags t ON t.id = rt.tag_id JOIN records r ON r.id = rt.record_id WHERE r.project = ?").all(project).map((r) => r.name),
+    ...db.prepare("SELECT t.name FROM project_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.project = ?").all(project).map((r) => r.name),
+  ]);
+  for (const tag of myTags)
+    for (const r of db.prepare("SELECT r.id FROM records r JOIN record_tags rt ON rt.record_id = r.id JOIN tags t ON t.id = rt.tag_id WHERE t.name = ? AND r.project <> ?").all(tag, project))
+      add(r.id, `tag:${tag}`);
+  // (b) explicit mentions in this project's notes
+  for (const n of db.prepare("SELECT body_md FROM notes WHERE scope = ?").all(project))
+    for (const m of resolveMentions(db, parseMentions(n.body_md))) {
+      if (m.kind === "record") add(m.target, "note-mention");
+      else if (m.kind === "project")
+        for (const r of db.prepare("SELECT id FROM records WHERE project = ?").all(m.target)) add(r.id, "note-mention");
+    }
+  // (c) shared DataVault run lineage (literally the same computed data)
+  for (const { p, run } of db.prepare("SELECT DISTINCT rr.project AS p, rr.run AS run FROM record_runs rr JOIN records r ON r.id = rr.record_id WHERE r.project = ?").all(project))
+    for (const r of db.prepare("SELECT r.id FROM record_runs rr JOIN records r ON r.id = rr.record_id WHERE rr.project = ? AND rr.run = ? AND r.project <> ?").all(p, run, project))
+      add(r.id, `run:${p}/${run}`);
+  const out = Object.keys(why)
+    .map((id) => { const r = db.prepare("SELECT id, project, title, importance FROM records WHERE id = ?").get(id); return r ? { ...r, why: [...why[id]] } : null; })
+    .filter((r) => r && r.project !== project); // a same-project mention isn't "elsewhere"
+  out.sort((a, b) => b.why.length - a.why.length || (b.importance || 0) - (a.importance || 0));
+  return out.slice(0, limit);
+}
 
 export function projectContext(db, name, { recordLimit = 200 } = {}) {
   const meta = projectMeta(db, name);
@@ -38,6 +70,7 @@ export function projectContext(db, name, { recordLimit = 200 } = {}) {
     updated: meta.updated_at,
     notes,
     records,
+    related: relatedRecords(db, name), // past experiments elsewhere (shared tags / mentions / runs)
   };
 }
 
@@ -64,6 +97,10 @@ export function contextMarkdown(ctx) {
       if ((r.body_md || "").trim()) L.push("", r.body_md.trim());
       for (const c of r.comments) L.push(`> **${c.author}:** ${c.body_md}`);
     }
+  }
+  if (ctx.related?.length) {
+    L.push("", "## Related (past experiments elsewhere)");
+    for (const r of ctx.related) L.push(`- ${r.title} \`${r.id}\` (${r.project}) — ${r.why.join(", ")}`);
   }
   return L.join("\n");
 }

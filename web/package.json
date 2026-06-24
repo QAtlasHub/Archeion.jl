@@ -8,10 +8,17 @@
     "dev": "node --experimental-sqlite --watch src/server.js",
     "start": "node --experimental-sqlite src/server.js",
     "test": "node --experimental-sqlite --test",
-    "bundle": "esbuild src/cgi.js --bundle --platform=node --format=esm --outfile=dist/cgi.js"
+    "bundle": "esbuild src/cgi.js --bundle --minify --platform=node --format=esm --outfile=dist/cgi.js && esbuild editor/main.js --bundle --minify --format=iife --outfile=public/compose-editor.js"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.7.0",
+    "@codemirror/view": "^6.43.2",
+    "@vscode/markdown-it-katex": "^1.1.2",
     "jsdom": "^29.1.1",
+    "katex": "^0.17.0",
     "markdown-it": "^14.1.0"
   },
   "devDependencies": {

@@ -21,8 +21,20 @@ export function openDb(path) {
   );
   db.exec(
     "CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, scope TEXT NOT NULL DEFAULT '', " +
-      "title TEXT NOT NULL DEFAULT '', body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), " +
+      "title TEXT NOT NULL DEFAULT '', body_md TEXT NOT NULL, pinned INTEGER NOT NULL DEFAULT 0, " +
+      "importance INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')), " +
       "updated_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
+  // add-column migrations for older `notes` tables (each ALTER throws if the column already exists)
+  for (const col of ["pinned INTEGER NOT NULL DEFAULT 0", "importance INTEGER NOT NULL DEFAULT 0", "description TEXT NOT NULL DEFAULT ''", "archived INTEGER NOT NULL DEFAULT 0"])
+    try { db.exec(`ALTER TABLE notes ADD COLUMN ${col}`); } catch (_) { /* already there */ }
+  db.exec("CREATE TABLE IF NOT EXISTS note_tags (note_id INTEGER NOT NULL, tag_id INTEGER NOT NULL, PRIMARY KEY (note_id, tag_id))");
+  // comments / annotations on a note (app-owned; parallels the records `comments` table)
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS note_comments (id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+      "note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE, user_id INTEGER, " +
+      "body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_note_comments_note ON note_comments(note_id)");
   return db;
 }

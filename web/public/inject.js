@@ -7,6 +7,16 @@
 async function archeionOverlay() {
   const id = window.ARCHEION_RECORD;
   if (!id || document.querySelector(".arx-header")) return; // no id, or already injected (idempotent)
+  // section-only mode: the /show section-fold iframe loads "#…&only=1" → render JUST that section's
+  // block (hide all siblings + chrome), so an embedded section shows only itself, not the whole page.
+  if (/[#&]only=/.test(location.hash || "")) {
+    const h = location.hash, ms = h.match(/arxsec=([^&]+)/), mf = h.match(/arxfig=([^&]+)/);
+    let el = null;
+    if (ms) { const t = decodeURIComponent(ms[1]); el = [...document.querySelectorAll("section.section")].find((s) => { const x = s.querySelector(":scope > h2"); return x && x.textContent.replace(/^[▾▸]\s*/, "").trim() === t; }); }
+    else if (mf) { const fid = decodeURIComponent(mf[1]); el = [...document.querySelectorAll("figure")].find((f) => { const l = f.querySelector("img[alt], iframe[title]"); return l && (l.getAttribute("alt") || l.getAttribute("title")) === fid; }); }
+    if (el) { document.body.classList.add("arx-only"); let node = el; while (node && node !== document.body) { for (const sib of node.parentElement.children) if (sib !== node && !sib.contains(el)) sib.style.display = "none"; node = node.parentElement; } }
+    return;
+  }
   const ridPath = encodeURIComponent(id).replace(/%2F/gi, "/"); // keep "/" literal in URLs
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   async function post(action, data) {
@@ -32,22 +42,62 @@ async function archeionOverlay() {
   const hostbar = pbar || header;
   hostbar.insertBefore(home, hostbar.firstChild); // Home in line with ★only / export / clear
 
-  // per-figure download, theme-independent (any <figure> the theme didn't already give one)
+  // add-buttons appear ONLY when this page is iframed inside the composer (/compose) — NOT in the
+  // /show section-fold iframe (same-origin, so we can read the parent's path).
+  const embed = window.top !== window.self && (() => {
+    try { return window.parent.location.pathname.startsWith("/compose"); } catch (_) { return false; }
+  })();
+  const emit = (code, btn, label) => {
+    try { window.parent.postMessage({ type: "arx-embed", code }, location.origin); } catch (_) { /* ignore */ }
+    if (btn) { btn.textContent = "✓ added"; setTimeout(() => { btn.textContent = label; }, 900); }
+  };
+  if (embed) {
+    const add = document.createElement("button");
+    add.type = "button"; add.className = "arx-addnote"; add.textContent = "➕ add page";
+    add.addEventListener("click", () => emit("![[" + id + "]]", add, "➕ add page"));
+    hostbar.insertBefore(add, hostbar.firstChild);
+  }
+
+  // per-figure: a theme-independent download + (compose mode) an "add figure" button. The figure id
+  // is its <img alt> / <iframe title> — Pinax emits string(f.id) there, = the DB figure-id suffix.
   document.querySelectorAll("figure").forEach((fig) => {
-    if (fig.querySelector("a[download]")) return;
+    const dest = fig.querySelector("figcaption") || fig;
     const src = fig.querySelector("img[src], iframe[src]")?.getAttribute("src");
-    if (!src) return;
-    const a = document.createElement("a");
-    a.className = "arx-dl"; a.href = src; a.setAttribute("download", ""); a.textContent = "⤓ download";
-    (fig.querySelector("figcaption") || fig).appendChild(a);
+    if (src && !fig.querySelector("a[download]")) {
+      const a = document.createElement("a");
+      a.className = "arx-dl"; a.href = src; a.setAttribute("download", ""); a.textContent = "⤓ download";
+      dest.appendChild(a);
+    }
+    if (embed) {
+      const lab = fig.querySelector("img[alt], iframe[title]");
+      const figid = lab && (lab.getAttribute("alt") || lab.getAttribute("title"));
+      if (figid) {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "arx-addfig"; b.textContent = "➕ add figure";
+        b.addEventListener("click", () => emit("![[" + id + ":" + figid + "]]", b, "➕ add figure"));
+        dest.appendChild(b);
+      }
+    }
   });
 
-  // section folding via a dedicated caret (so Pinax's own section comment/star don't fold)
-  document.querySelectorAll("section.section > h2").forEach((h) => {
+  // each section: a fold caret + (compose mode) an "add section" button = its title + its figures
+  document.querySelectorAll("section.section").forEach((sec) => {
+    const h = sec.querySelector(":scope > h2");
+    if (!h) return;
+    const title = h.textContent.trim(); // capture before injecting caret/buttons
     const caret = document.createElement("button");
     caret.type = "button"; caret.className = "arx-caret"; caret.title = "fold section"; caret.textContent = "▾";
-    caret.addEventListener("click", () => { caret.textContent = h.parentElement.classList.toggle("arx-collapsed") ? "▸" : "▾"; });
+    caret.addEventListener("click", () => { caret.textContent = sec.classList.toggle("arx-collapsed") ? "▸" : "▾"; });
     h.insertBefore(caret, h.firstChild);
+    if (embed) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "arx-addsec"; b.textContent = "➕ add section";
+      b.addEventListener("click", () => {
+        const t = title.replace(/[[\]#]/g, "").trim() || "section"; // sanitize for the ![[record#title]] syntax
+        emit("![[" + id + "#" + t + "]]", b, "➕ add section");
+      });
+      h.appendChild(b);
+    }
   });
 
   // ===== PHASE 2: data (/api) — metaproperty panel (after the title) + Discussion =====
@@ -133,6 +183,26 @@ async function archeionOverlay() {
     disc.querySelector(".arx-comments").appendChild(d); ta.value = "";
     save("/r/" + ridPath + "/comment", { body_md: body }, () => d.remove());
   };
+  // deep link: a #arxfig=<figid> / #arxsec=<title> in the URL → scroll that figure/section to centre
+  // + flash it (so an embed's link "opens centred on" its target, not just at the top of the page).
+  const focusTarget = () => {
+    const h = location.hash || "", mf = h.match(/arxfig=([^&]+)/), ms = h.match(/arxsec=([^&]+)/);
+    let el = null;
+    if (mf) {
+      const fid = decodeURIComponent(mf[1]);
+      el = [...document.querySelectorAll("figure")].find((f) => { const l = f.querySelector("img[alt], iframe[title]"); return l && (l.getAttribute("alt") || l.getAttribute("title")) === fid; });
+    } else if (ms) {
+      const t = decodeURIComponent(ms[1]);
+      el = [...document.querySelectorAll("section.section")].find((s) => { const hh = s.querySelector(":scope > h2"); return hh && hh.textContent.replace(/^[▾▸]\s*/, "").trim() === t; });
+    }
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      document.querySelectorAll(".arx-target").forEach((x) => x.classList.remove("arx-target"));
+      el.classList.add("arx-target"); setTimeout(() => el.classList.remove("arx-target"), 2400);
+    }
+  };
+  focusTarget();
+  window.addEventListener("hashchange", focusTarget);
   console.log("[archeion] overlay ready:", id);
 }
 // Run on DOMContentLoaded — Pinax's app.js (registered earlier) builds #pinax-bar first; we then move

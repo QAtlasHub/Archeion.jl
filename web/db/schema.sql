@@ -122,10 +122,30 @@ CREATE TABLE IF NOT EXISTS notes (
     scope      TEXT    NOT NULL DEFAULT '',      -- project slug, or '' = global
     title      TEXT    NOT NULL DEFAULT '',      -- optional short title
     body_md    TEXT    NOT NULL,
+    pinned     INTEGER NOT NULL DEFAULT 0,       -- 1 = a "structure note" / advisor-facing page (shown clean at /show/:id)
+    importance INTEGER NOT NULL DEFAULT 0,       -- 0..3, for managing structure notes by importance (+ date)
+    description TEXT   NOT NULL DEFAULT '',      -- short summary / front-matter (markdown), separate from body_md
+    archived   INTEGER NOT NULL DEFAULT 0,       -- 1 = hidden from the active list (kept in the archived section + search)
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_notes_scope ON notes(scope);
+-- a note's tags (reuses the shared `tags` vocabulary, like project_tags / record_tags)
+CREATE TABLE IF NOT EXISTS note_tags (
+    note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    tag_id  INTEGER NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
+    PRIMARY KEY (note_id, tag_id)
+);
+-- comments / annotations on a note (app-owned; parallels the records `comments` table). Shown on the
+-- note's "open" view (/note/:id) where the author reads + annotates their own working note.
+CREATE TABLE IF NOT EXISTS note_comments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id    INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id),
+    body_md    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_note_comments_note ON note_comments(note_id);
 
 -- ===================== USERS + PER-USER (app-owned) =====================
 CREATE TABLE IF NOT EXISTS users (

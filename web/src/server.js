@@ -19,10 +19,10 @@ const USER = process.env.ARCHEION_USER || "you";
 
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
+  "X-Frame-Options": "SAMEORIGIN", // the composer's refs pane iframes Archeion itself (same-origin)
   "Referrer-Policy": "same-origin",
   "Content-Security-Policy":
-    "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'",
+    "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; form-action 'self'; base-uri 'none'",
 };
 // Headers for the embedded Pinax pages (/pages/*): framable by our own dashboard, and WITHOUT the
 // strict app CSP so the run's own page (KaTeX CDN, its inline styles) renders unbroken. It's our
@@ -37,6 +37,7 @@ const MIME = {
   ".gif": "image/gif", ".webp": "image/webp", ".pdf": "application/pdf",
   ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
   ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
+  ".woff2": "font/woff2", ".woff": "font/woff",
 };
 
 async function readForm(req) {
@@ -75,8 +76,11 @@ const app = createApp(DB);
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    if (req.method === "GET" && ["/style.css", "/app.js", "/inject.js", "/inject.css"].includes(url.pathname)) {
+    if (req.method === "GET" && ["/style.css", "/app.js", "/inject.js", "/inject.css", "/compose-editor.js"].includes(url.pathname)) {
       return serveStatic(res, PUBLIC, url.pathname.slice(1));
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/katex/")) { // self-hosted KaTeX css + fonts
+      return serveStatic(res, PUBLIC, url.pathname.replace(/^\/+/, ""));
     }
     if (req.method === "GET" && url.pathname.startsWith("/figures/")) {
       return serveStatic(res, CONTENT, url.pathname.replace(/^\/+/, ""));

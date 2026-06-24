@@ -7,8 +7,9 @@ import {
   projectMeta, addProjectTag, removeProjectTag, addTodo, toggleTodo, removeTodo,
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
-  notesForDisplay, allNotesForDisplay, getNote, addNote, updateNote, removeNote,
-  projectContext, contextMarkdown,
+  notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
+  parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
+  projectContext, contextMarkdown, setTodoDone,
 } from "./db.js";
 import * as V from "./render.js";
 
@@ -117,18 +118,58 @@ export function createApp(dbPath) {
       // they redirect back and the page re-renders — no optimistic path.
       if (path === "/noteadd") {
         const scope = body.get("scope") || "";
-        addNote(db, scope, body.get("title") || "", body.get("body") || "");
+        const nid = addNote(db, scope, body.get("title") || "", body.get("body") || "",
+          { importance: body.get("importance") || 0, pinned: body.get("pinned") === "1", description: body.get("description") || "" });
+        if (nid && body.get("tags") !== null) setNoteTags(db, nid, parseTags(body.get("tags")));
+        if (body.get("from") === "compose") return redirect(nid ? `/compose?id=${nid}` : "/compose");
         return redirect(scope ? `/p/${rid(scope)}` : "/notes");
       }
       if (path === "/noteedit") {
         const n = getNote(db, body.get("id"));
-        if (n) updateNote(db, n.id, body.get("title") || "", body.get("body") || "");
+        const opts = {}; // importance/description absent on the inline note-card edit → leave them
+        if (body.get("importance") !== null) opts.importance = body.get("importance");
+        if (body.get("description") !== null) opts.description = body.get("description");
+        if (n) updateNote(db, n.id, body.get("title") || "", body.get("body") || "", opts);
+        if (n && body.get("tags") !== null) setNoteTags(db, n.id, parseTags(body.get("tags")));
+        if (body.get("from") === "compose") return redirect(n ? `/compose?id=${n.id}` : "/notes");
         return redirect(n && n.scope ? `/p/${rid(n.scope)}` : "/notes");
       }
       if (path === "/notedel") {
         const n = getNote(db, body.get("id"));
         if (n) removeNote(db, n.id);
         return redirect(n && n.scope ? `/p/${rid(n.scope)}` : "/notes");
+      }
+      if (path === "/notepin") {
+        const n = getNote(db, body.get("id"));
+        if (n) setPinned(db, n.id, body.get("pinned") === "1");
+        return redirect(n && n.scope ? `/p/${rid(n.scope)}` : "/notes");
+      }
+      if (path === "/notearchive") {
+        const n = getNote(db, body.get("id"));
+        if (n) setNoteArchived(db, n.id, body.get("archived") === "1");
+        return redirect(back(h, "/notes"));
+      }
+      // LLM channel: check/uncheck a todo (idempotent). Server-to-server (no Origin) passes the CSRF
+      // gate; a cross-origin browser POST is still rejected. The advisor browses pages, not /api.
+      {
+        const tm = path.match(/^\/api\/project\/(.+)\/todo$/);
+        if (tm) {
+          const d = String(body.get("done") ?? "1");
+          const ok = setTodoDone(db, body.get("id"), d === "1" || d === "true" || d === "done");
+          return json({ ok }, ok ? 200 : 404);
+        }
+      }
+      if (path === "/api/note/preview") {
+        // inline preview of the composer's CURRENT edits (no save) — a full chrome-free present page,
+        // loaded into the composer's preview iframe. Markdown + [[mentions]] + ![[embeds]] resolved here.
+        const b = body.get("body") || "";
+        const noteLike = {
+          id: body.get("id") || "", scope: body.get("scope") || "",
+          title: body.get("title") || "", importance: +(body.get("importance") || 0),
+          tags: parseTags(body.get("tags")), description: body.get("description") || "",
+          body_md: b, mentions: resolveMentions(db, parseMentions(b)), embeds: resolveEmbeds(db, parseEmbeds(b)),
+        };
+        return html(V.renderNotePreview(noteLike));
       }
       const m = path.match(/^\/r\/(.+)\/comment$/);
       if (m) {
@@ -138,6 +179,15 @@ export function createApp(dbPath) {
           t && addComment(db, id, uid(), t);
         }
         return ok(`/r/${rid(id)}`);
+      }
+      const cm = path.match(/^\/note\/(.+)\/comment$/);
+      if (cm) {
+        const id = decodeURIComponent(cm[1]);
+        if (getNote(db, id)) {
+          const t = (body.get("body_md") || "").trim();
+          t && addNoteComment(db, id, uid(), t);
+        }
+        return redirect(`/note/${rid(id)}`);
       }
       return { status: 404, type: "text/plain", body: "Not found" };
     }
@@ -187,6 +237,29 @@ export function createApp(dbPath) {
     }
     if (path === "/notes") {
       return html(V.renderNotes(allNotesForDisplay(db), side()));
+    }
+    if (path.startsWith("/show/")) {
+      // the advisor-facing view of a pinned structure note: home-style header + sidebar/hamburger menu
+      const note = noteForDisplay(db, decodeURIComponent(path.slice(6)));
+      return html(V.renderShow(note, side()), note ? 200 : 404);
+    }
+    if (path.startsWith("/note/")) {
+      // "open" a note: the working view — rendered note + comments / annotations (a normal app page)
+      const id = decodeURIComponent(path.slice(6));
+      const note = noteForDisplay(db, id);
+      return html(V.renderNoteView(note, note ? noteComments(db, id) : [], side()), note ? 200 : 404);
+    }
+    if (path === "/compose") {
+      // the two-pane structure-note composer (pick figures/records to embed + markdown + live preview)
+      const nid = query.get("id");
+      const note = nid ? noteForDisplay(db, nid) : { scope: query.get("scope") || "", body_md: "", mentions: [], embeds: [] };
+      const picker = projects(db).map((p) => ({
+        project: p.project,
+        records: byProject(db, p.project, { includeArchived: true }).map((r) => ({
+          id: r.id, title: r.title, date: r.date, importance: r.importance, tags: recordTags(db, r.id), figures: recordFigures(db, r.id),
+        })),
+      }));
+      return html(V.renderCompose(note, picker));
     }
     if (path.startsWith("/p/")) {
       const project = decodeURIComponent(path.slice(3));
