@@ -11,6 +11,7 @@
     "bundle": "esbuild src/cgi.js --bundle --platform=node --format=esm --outfile=dist/cgi.js"
   },
   "dependencies": {
+    "jsdom": "^29.1.1",
     "markdown-it": "^14.1.0"
   },
   "devDependencies": {

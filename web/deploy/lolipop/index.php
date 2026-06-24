@@ -20,7 +20,11 @@ $env = [
     'ARCHEION_QUERY'  => $query,
     'ARCHEION_ORIGIN' => $_SERVER['HTTP_ORIGIN'] ?? '',
     'ARCHEION_HOST'   => $_SERVER['HTTP_HOST'] ?? '',
+    'ARCHEION_XRW'    => $_SERVER['HTTP_X_REQUESTED_WITH'] ?? '',
     'ARCHEION_DB'     => $db,
+    // node 22 caches compiled bytecode of the 264KB bundle here → faster cold start per request.
+    // Under data/ so it's writable and the .htaccess RedirectMatch keeps it off the web.
+    'NODE_COMPILE_CACHE' => $dir . '/data/.node-compile-cache',
     'OPENSSL_CONF'    => '/dev/null', // avoid /etc/ssl/openssl.cnf permission error
     'PATH'            => '/usr/local/bin:/usr/bin:/bin',
 ];
@@ -63,5 +67,8 @@ if (!empty($meta['headers'])) {
 header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('Referrer-Policy: same-origin');
-header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'none'; form-action 'self'; base-uri 'none'");
+// Dynamic pages must never be cached: after a write the POST 303-redirects to the record GET,
+// and a cached/bfcache copy would show the pre-write page ("tag added but not reflected").
+header('Cache-Control: no-store, max-age=0');
+header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'");
 echo $body;

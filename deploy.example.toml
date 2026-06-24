@@ -6,6 +6,14 @@
 # (private) subdomain you serve the registry from, e.g. data.sota-shimozono.com.
 # Make it private with Lolipop's access-restriction panel, or Archeion.write_basic_auth.
 
+# The push/pull transport is backend-neutral (see src/transport.jl). `kind` selects the backend;
+# `db_path` is the registry DB's path under the remote docroot, used by `Archeion.pull` to fetch the
+# live DB back so the Julia readers see the web app's annotations. Omit this whole table to default
+# to ftps + data/archeion.db (so existing [ftp]-only configs keep working).
+[archeion.remote]
+kind    = "ftps"                 # ftps (Lolipop) now; cloudflare / rsync / local plug in the same way
+db_path = "data/archeion.db"     # the DB's path relative to [ftp].remote_dir
+
 [ftp]
 host = "ftp.lolipop.jp"          # your Lolipop FTP server host
 user = "your-ftp-account"        # FTP account name

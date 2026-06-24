@@ -17,5 +17,6 @@ npm-debug.log*
 .env
 .env.*
 
-# build output (bundled CGI)
+# build output (bundled CGI + assembled deploy tree)
 dist/
+build/

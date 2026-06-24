@@ -16,6 +16,7 @@ const query = new URLSearchParams(process.env.ARCHEION_QUERY || "");
 const headers = {
   origin: process.env.ARCHEION_ORIGIN || "",
   host: process.env.ARCHEION_HOST || "",
+  xrw: process.env.ARCHEION_XRW || "", // X-Requested-With: fetch → write routes reply 204
 };
 
 let body;

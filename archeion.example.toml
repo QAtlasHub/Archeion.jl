@@ -1,0 +1,15 @@
+# Archeion registry config — the `[archeion]` section to ADD to your project's config.toml (the SAME
+# file that drives ParamIO / DataVault / ParallelManager). Archeion reads `[study]` (project_name,
+# outdir) + `[datavault]` + `[archeion]`. NOTHING project-specific is committed into the public
+# Archeion repo: this section lives in YOUR project (or gitignored locally).
+#
+# Secrets (FTP password) go in env: ARCHEION_FTP_PASSWORD. The deploy FTP target itself lives in a
+# gitignored `deploy.local.toml` (copy `deploy.example.toml`).
+
+[archeion]
+db          = "${ARCHEION_DB}"            # the ONE shared registry DB — SAME path for every project
+                                          #   (cross-project search; do not split into per-project DBs)
+content_dir = "data"                      # where ingest stores the rendered pages / figures
+category    = "Demonstration/Examples"    # PARA category, used by the web app to organize records
+tags        = ["example"]                 # default tags applied to this project's records
+deploy      = "deploy.local.toml"         # FTP target config (gitignored; secret via ARCHEION_FTP_PASSWORD)
