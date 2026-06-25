@@ -65,14 +65,19 @@ export function renderAccount(me, err, ok, { projects = [], tags = [] } = {}) {
 }
 
 export function renderAdminUsers(accounts, me, { projects = [], tags = [] } = {}) {
-  const rows = accounts.map((a) => `<tr>
-    <td>${esc(a.name)}${a.id === me.id ? ' <span class="muted">(you)</span>' : ""}</td>
-    <td>${esc(a.role)}</td>
-    <td>${a.pending ? `<span class="muted">invited</span> <a class="inv-link" href="/invite/${esc(a.invite_token)}">link</a> <button type="button" class="copy-link" data-path="/invite/${esc(a.invite_token)}">copy</button>` : "active"}</td>
-    <td class="admin-acts">
-      ${a.id === me.id ? "" : `<form method="post" action="/admin/userreset" class="inline" onsubmit="return confirm('Reset ${esc(a.name)}? They will choose a new password on next sign-in.')"><input type="hidden" name="id" value="${a.id}"><button${a.pending ? " disabled title='already pending'" : ""}>reset password</button></form>
-      <form method="post" action="/admin/userdel" class="inline" onsubmit="return confirm('Delete ${esc(a.name)}?')"><input type="hidden" name="id" value="${a.id}"><button class="danger">delete</button></form>`}
-    </td></tr>`).join("");
+  const rows = accounts.map((a) => {
+    const del = `<form method="post" action="/admin/userdel" class="inline" onsubmit="return confirm('Delete ${esc(a.name)}?')"><input type="hidden" name="id" value="${a.id}"><button class="danger">delete</button></form>`;
+    const acts = a.id === me.id
+      ? '<span class="muted">—</span>'
+      : a.pending
+        ? `<a class="inv-link" href="/invite/${esc(a.invite_token)}">open link</a><button type="button" class="copy-link" data-path="/invite/${esc(a.invite_token)}">copy</button>${del}`
+        : `<form method="post" action="/admin/userreset" class="inline" onsubmit="return confirm('Reset ${esc(a.name)}? They set a new password via a fresh invite link.')"><input type="hidden" name="id" value="${a.id}"><button>reset password</button></form>${del}`;
+    return `<tr>
+      <td>${esc(a.name)}${a.id === me.id ? ' <span class="muted">(you)</span>' : ""}</td>
+      <td>${esc(a.role)}</td>
+      <td><span class="muted">${a.pending ? "invited" : "active"}</span></td>
+      <td class="admin-acts">${acts}</td></tr>`;
+  }).join("");
   const main = `<h2>Users <span class="muted">(${accounts.length})</span></h2>
     <p class="muted">Invite a collaborator by <strong>username only</strong>, then send them the <strong>invite link</strong> (copy it from the row) — they open it and set their own password (you never see it). They'll also need the shared site password (Basic auth). "Reset" revokes the password and makes a fresh link.</p>
     <table class="admin-users"><thead><tr><th>user</th><th>role</th><th>status</th><th></th></tr></thead><tbody>${rows}</tbody></table>
