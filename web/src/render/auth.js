@@ -70,7 +70,7 @@ export function renderAdminUsers(accounts, me, { projects = [], tags = [] } = {}
     const acts = a.id === me.id
       ? '<span class="muted">—</span>'
       : a.pending
-        ? `<a class="inv-link" href="/invite/${esc(a.invite_token)}">open link</a><button type="button" class="copy-link" data-path="/invite/${esc(a.invite_token)}">copy</button>${del}`
+        ? `<button type="button" class="copy-link" data-path="/invite/${esc(a.invite_token)}">copy invite link</button>${del}`
         : `<form method="post" action="/admin/userreset" class="inline" onsubmit="return confirm('Reset ${esc(a.name)}? They set a new password via a fresh invite link.')"><input type="hidden" name="id" value="${a.id}"><button>reset password</button></form>${del}`;
     return `<tr>
       <td>${esc(a.name)}${a.id === me.id ? ' <span class="muted">(you)</span>' : ""}</td>

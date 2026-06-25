@@ -443,7 +443,7 @@ test("accounts: admin invites by name only; the user sets their own password on 
   const list = GET(app, "/admin/users", admin).body;
   assert.match(list, /advisor/);
   assert.match(list, /invited/); // pending status
-  assert.match(list, /href="\/invite\//); // …with an invite link
+  assert.match(list, /data-path="\/invite\//); // …with a copyable invite link
   // advisor signs in → detected pending → activation page (NOT logged in yet)
   const lg = POST(app, "/login", { name: "advisor", password: "anything" });
   assert.equal(lg.status, 200);
@@ -493,7 +493,7 @@ test("accounts: invite link — admin invites by name, the link lets the user se
   const app = setup();
   const admin = ck(POST(app, "/setup", { name: "admin", password: "adminpass123" }));
   POST(app, "/admin/useradd", { name: "advisor", role: "member" }, admin);
-  const link = GET(app, "/admin/users", admin).body.match(/href="(\/invite\/[^"]+)"/)[1];
+  const link = GET(app, "/admin/users", admin).body.match(/data-path="(\/invite\/[^"]+)"/)[1];
   assert.ok(link.startsWith("/invite/"));
   // opening the link shows the activation form (no username needed)
   const page = GET(app, link);
