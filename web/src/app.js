@@ -8,7 +8,7 @@ import {
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
-  addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation,
+  addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation, relatedNotes,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
   projectContext, contextMarkdown, setTodoDone,
   getAccount, getAccountById, getByInviteToken, countAccounts, listAccounts, createAccount, inviteAccount, revokePassword, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
@@ -392,10 +392,10 @@ export function createApp(dbPath) {
       return html(V.renderShow(note, side()), note ? 200 : 404);
     }
     if (path.startsWith("/note/")) {
-      // "open" a note: the working view — rendered note + comments / annotations (a normal app page)
+      // "open" a note: the working view — rendered note + related (links/backlinks) + comments
       const id = decodeURIComponent(path.slice(6));
       const note = noteForDisplay(db, id);
-      return html(V.renderNoteView(note, note ? noteComments(db, id) : [], side()), note ? 200 : 404);
+      return html(V.renderNoteView(note, note ? noteComments(db, id) : [], note ? relatedNotes(db, id) : [], side()), note ? 200 : 404);
     }
     if (path === "/compose") {
       if (me.role !== "admin") return redirect("/notes"); // composing/editing notes is admin-only

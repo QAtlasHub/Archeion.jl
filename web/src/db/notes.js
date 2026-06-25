@@ -24,8 +24,26 @@ export function resolveMentions(db, targets) {
   return (targets || []).map((t) => {
     if (db.prepare("SELECT 1 FROM records WHERE id = ?").get(t)) return { target: t, kind: "record", ref: `/r/${t}` };
     if (db.prepare("SELECT 1 FROM projects WHERE name = ?").get(t)) return { target: t, kind: "project", ref: `/p/${t}` };
+    // note → note: explicit [[note:<id-or-title>]] or a bare [[Title]] matching a note title
+    const key = t.startsWith("note:") ? t.slice(5).trim() : t;
+    let n = /^\d+$/.test(key) ? db.prepare("SELECT id, title, pinned FROM notes WHERE id = ?").get(+key) : null;
+    if (!n) n = db.prepare("SELECT id, title, pinned FROM notes WHERE title = ? ORDER BY pinned DESC, id LIMIT 1").get(key);
+    if (n) return { target: t, kind: "note", id: n.id, title: n.title || `note ${n.id}`, ref: `/note/${n.id}` };
     return { target: t, kind: "unresolved", ref: null };
   });
+}
+// backlinks: notes that mention THIS note (by [[note:<id>]], [[note:<title>]], or a bare [[<title>]])
+export function relatedNotes(db, noteId) {
+  const note = getNote(db, noteId);
+  if (!note) return [];
+  const keys = new Set([`note:${noteId}`]);
+  if ((note.title || "").trim()) { keys.add(`note:${note.title}`); keys.add(note.title); }
+  const seen = new Set(), out = [];
+  for (const k of keys) for (const n of notesMentioning(db, k)) {
+    if (n.id === note.id || seen.has(n.id)) continue;
+    seen.add(n.id); out.push({ id: n.id, title: n.title, scope: n.scope });
+  }
+  return out;
 }
 // resolve an embed target to a figure / a section / a record (+ its figures). Every kind also carries
 // the source record id so the rendered block can link to its Pinax page.

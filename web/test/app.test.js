@@ -550,6 +550,24 @@ test("annotations: structure-note only — add (anchored) / list / delete; non-p
   assert.equal(anno(pid, { exact: "y", body_md: "no" }).status, 403);
 });
 
+test("notes: note→note + project mentions (graph edges) — links out + backlinks on /note/:id", () => {
+  const app = setup();
+  const a = post(app, "/noteadd", { title: "Alpha", body: "root", pinned: "1", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  const b = post(app, "/noteadd", { title: "Beta", body: `see [[note:${a}]] and [[proj]]`, from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  // Beta's view: links out resolve to the note + the project
+  const bv = get(app, "/note/" + b).body;
+  assert.match(bv, new RegExp(`class="rel-chip rel-note" href="/note/${a}"`));
+  assert.match(bv, /class="rel-chip rel-project" href="\/p\/proj"/);
+  // Alpha's view: backlink from Beta
+  const av = get(app, "/note/" + a).body;
+  assert.match(av, /← linked from/);
+  assert.match(av, new RegExp(`href="/note/${b}"`));
+  // a bare [[Title]] also resolves to the note (after record/project miss)
+  const c = post(app, "/noteadd", { title: "Gamma", body: "ref [[Alpha]]", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  assert.match(get(app, "/note/" + c).body, new RegExp(`class="rel-chip rel-note" href="/note/${a}"`));
+  assert.match(get(app, "/note/" + a).body, new RegExp(`href="/note/${c}"`)); // Gamma is also a backlink
+});
+
 test.after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
 });
