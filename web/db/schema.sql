@@ -150,8 +150,11 @@ CREATE INDEX IF NOT EXISTS idx_note_comments_note ON note_comments(note_id);
 -- ===================== USERS + PER-USER (app-owned) =====================
 CREATE TABLE IF NOT EXISTS users (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    name         TEXT NOT NULL UNIQUE,        -- Basic-auth username (auto-created on first access)
+    name         TEXT NOT NULL UNIQUE,        -- login username
     display_name TEXT,
+    pw_hash      TEXT,                         -- scrypt hash (NULL = legacy/trusted-only row, no login)
+    role         TEXT NOT NULL DEFAULT 'member', -- 'admin' (manages users) | 'member'
+    must_change  INTEGER NOT NULL DEFAULT 0,   -- force a password change on next login (admin-set temp)
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

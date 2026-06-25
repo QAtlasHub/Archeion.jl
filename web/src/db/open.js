@@ -36,5 +36,15 @@ export function openDb(path) {
       "body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
   db.exec("CREATE INDEX IF NOT EXISTS idx_note_comments_note ON note_comments(note_id)");
+  // app-level accounts (login identity, layered above the shared Basic-auth gate). Created here too so
+  // a node-only / freshly-initialized DB has it; declared in schema.sql for ingest-built DBs.
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, " +
+      "display_name TEXT, pw_hash TEXT, role TEXT NOT NULL DEFAULT 'member', " +
+      "must_change INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+  );
+  // add-column migrations for older `users` tables (each ALTER throws if the column already exists)
+  for (const col of ["pw_hash TEXT", "role TEXT NOT NULL DEFAULT 'member'", "must_change INTEGER NOT NULL DEFAULT 0"])
+    try { db.exec(`ALTER TABLE users ADD COLUMN ${col}`); } catch (_) { /* already there */ }
   return db;
 }

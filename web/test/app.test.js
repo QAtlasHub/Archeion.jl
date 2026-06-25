@@ -35,10 +35,10 @@ function setup() {
 }
 
 const get = (app, path, q = {}) =>
-  app("GET", path, new URLSearchParams(q), { headers: { host: "localhost", user: "alice" } });
+  app("GET", path, new URLSearchParams(q), { headers: { host: "localhost", user: "alice", trustedUser: "alice" } });
 const post = (app, path, form) =>
   app("POST", path, new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams(form),
   });
 
@@ -142,7 +142,7 @@ test("PARA: project defaults to Active (Projects) and can be re-filed", () => {
 test("CSRF: cross-origin POST is rejected", () => {
   const app = setup();
   const r = app("POST", "/bookmark", new URLSearchParams(), {
-    headers: { origin: "http://evil.example", host: "localhost", user: "alice" },
+    headers: { origin: "http://evil.example", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ kind: "record", id: "p/r1" }),
   });
   assert.equal(r.status, 403);
@@ -251,7 +251,7 @@ test("framing: dashboard pages allow same-origin embedding (composer iframes Arc
 test("math: $…$ renders as KaTeX server-side (safe with x_1) in the preview", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ body: "energy $E=mc^2$ and a subscript $x_1$" }),
   });
   assert.equal(r.status, 200);
@@ -261,7 +261,7 @@ test("math: $…$ renders as KaTeX server-side (safe with x_1) in the preview", 
 test("composer: /api/note/preview renders ![[figure]] embeds + [[mention]] links", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ body: "result ![[p/r1:mag]] see [[p/r1]]" }),
   });
   assert.equal(r.status, 200);
@@ -272,7 +272,7 @@ test("composer: /api/note/preview renders ![[figure]] embeds + [[mention]] links
 test("composer preview: a full page of the CURRENT edits, chrome-free (no header → no duplicate)", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
-    headers: { origin: "http://localhost", host: "localhost", user: "alice" },
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
     body: new URLSearchParams({ title: "Draft", importance: "3", tags: "#mps draft", description: "wip", body: "unsaved body" }),
   });
   assert.equal(r.status, 200);
@@ -395,11 +395,68 @@ test("LLM channel: check a todo via /api/project/:n/todo (no Origin = server-to-
   const id = ctx.todos[0].id;
   assert.equal(ctx.todos[0].done, 0);
   const r = app("POST", "/api/project/proj/todo", new URLSearchParams(), {
-    headers: { host: "localhost", user: "alice" }, body: new URLSearchParams({ id: String(id), done: "1" }),
+    headers: { host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams({ id: String(id), done: "1" }),
   });
   assert.equal(r.status, 200);
   ctx = JSON.parse(get(app, "/api/project/proj/context").body);
   assert.equal(ctx.todos[0].done, 1); // the LLM's check is reflected
+});
+
+// ---- app-level accounts (login layer above the shared Basic-auth gate) ----
+// These exercise the REAL login flow, so they DON'T pass trustedUser (which bypasses auth).
+const A = { origin: "http://localhost", host: "localhost" };
+const ck = (r) => (r.headers?.["Set-Cookie"] || "").split(";")[0]; // "arx_session=<token>"
+const POST = (app, path, form, cookie) => app("POST", path, new URLSearchParams(), { headers: { ...A, cookie }, body: new URLSearchParams(form) });
+const GET = (app, path, cookie) => app("GET", path, new URLSearchParams(), { headers: { host: "localhost", cookie } });
+
+test("accounts: first-run setup → home gated → wrong/right login → self-service password change", () => {
+  const app = setup();
+  // no accounts yet → everything routes to /setup
+  const g0 = GET(app, "/");
+  assert.equal(g0.status, 303); assert.match(g0.headers.Location, /\/setup/);
+  // create the admin (first run) → signed in (Set-Cookie)
+  const s = POST(app, "/setup", { name: "sota", password: "hunter2hunter2" });
+  assert.equal(s.status, 303);
+  const c = ck(s); assert.match(c, /^arx_session=/);
+  const home = GET(app, "/", c);
+  assert.equal(home.status, 200); assert.match(home.body, /sota · /); // header shows user + account/logout
+  // now accounts exist → no cookie bounces to /login (not /setup)
+  assert.match(GET(app, "/notes").headers.Location, /\/login/);
+  // wrong password
+  assert.equal(POST(app, "/login", { name: "sota", password: "nope" }).status, 401);
+  // right password → cookie
+  const good = POST(app, "/login", { name: "sota", password: "hunter2hunter2" });
+  assert.equal(good.status, 303); const c2 = ck(good);
+  // change password
+  const chg = POST(app, "/account", { current: "hunter2hunter2", password: "newpass123456" }, c2);
+  assert.equal(chg.status, 200); assert.match(chg.body, /Password changed/);
+  // old password no longer works; new one does
+  assert.equal(POST(app, "/login", { name: "sota", password: "hunter2hunter2" }).status, 401);
+  assert.equal(POST(app, "/login", { name: "sota", password: "newpass123456" }).status, 303);
+});
+
+test("accounts: admin adds a member with a temp password → forced change; members can't reach /admin", () => {
+  const app = setup();
+  const admin = ck(POST(app, "/setup", { name: "admin", password: "adminpass123" }));
+  // admin adds a member (temp pw, must change)
+  assert.equal(POST(app, "/admin/useradd", { name: "advisor", password: "temppass123", role: "member" }, admin).status, 303);
+  assert.match(GET(app, "/admin/users", admin).body, /advisor/);
+  // advisor signs in → forced to /account (must_change)
+  const lg = POST(app, "/login", { name: "advisor", password: "temppass123" });
+  assert.equal(lg.status, 303); assert.match(lg.headers.Location, /\/account/);
+  const ac = ck(lg);
+  assert.match(GET(app, "/notes", ac).headers.Location, /\/account/); // must_change bounces everything to /account
+  // change the temp password → must_change cleared, normal access resumes
+  assert.equal(POST(app, "/account", { current: "temppass123", password: "advisorpass123" }, ac).status, 200);
+  assert.equal(GET(app, "/notes", ac).status, 200);
+  assert.equal(GET(app, "/admin/users", ac).status, 403); // …but a member still can't manage users
+});
+
+test("accounts: write routes require a session (no anonymous bookmarks)", () => {
+  const app = setup();
+  POST(app, "/setup", { name: "x", password: "xxxxxxxx12" }); // accounts now exist
+  const r = POST(app, "/bookmark", { kind: "record", id: "p/r1" }); // no cookie
+  assert.equal(r.status, 401);
 });
 
 test.after(() => {

@@ -21,6 +21,7 @@ $env = [
     'ARCHEION_ORIGIN' => $_SERVER['HTTP_ORIGIN'] ?? '',
     'ARCHEION_HOST'   => $_SERVER['HTTP_HOST'] ?? '',
     'ARCHEION_XRW'    => $_SERVER['HTTP_X_REQUESTED_WITH'] ?? '',
+    'ARCHEION_COOKIE' => $_SERVER['HTTP_COOKIE'] ?? '',  // app login session (layer 2, above Basic auth)
     'ARCHEION_DB'     => $db,
     // node 22 caches compiled bytecode of the 264KB bundle here → faster cold start per request.
     // Under data/ so it's writable and the .htaccess RedirectMatch keeps it off the web.

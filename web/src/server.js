@@ -95,7 +95,8 @@ const server = createServer(async (req, res) => {
         host: req.headers.host,
         referer: req.headers.referer,
         xrw: req.headers["x-requested-with"],
-        user: USER,
+        cookie: req.headers.cookie,
+        trustedUser: USER, // panza daemon = a single trusted (admin) local user, no login UI needed
       },
       body,
     });

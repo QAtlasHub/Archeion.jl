@@ -10,8 +10,10 @@ import {
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
   projectContext, contextMarkdown, setTodoDone,
+  getAccountById, countAccounts, listAccounts, createAccount, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
 } from "./db.js";
 import * as V from "./render.js";
+import { SESSION_COOKIE, sessionSecret, makeToken, verifyToken, parseCookies, setSessionCookie, clearSessionCookie } from "./auth.js";
 
 const html = (b, s = 200) => ({ status: s, type: "text/html; charset=utf-8", body: b });
 const json = (o, s = 200) => ({ status: s, type: "application/json; charset=utf-8", body: JSON.stringify(o, null, 2) });
@@ -41,14 +43,102 @@ function back(h, fallback) {
 
 export function createApp(dbPath) {
   const db = openDb(dbPath);
+  const SECRET = sessionSecret(dbPath);
   return function handle(method, path, query, opts = {}) {
     const h = opts.headers || {};
     const body = opts.body || new URLSearchParams();
-    const uid = () => ensureUser(db, h.user || "");
     // fetch() writes send X-Requested-With: fetch and want 204 (no redirect → no re-render → no
     // stale read-back on Lolipop NFS). Plain form posts (no header) still get the 303 redirect.
     const xrw = (h.xrw || "") === "fetch";
     const ok = (loc) => (xrw ? { status: 204, type: "text/plain; charset=utf-8", body: "" } : redirect(loc));
+    const isPost = method === "POST";
+    const cookie = (loc, value) => ({ status: 303, type: "text/html; charset=utf-8", body: "", headers: { Location: loc, "Set-Cookie": value } });
+
+    // ===== identity (layer 2: app accounts; layer 1 = the shared Basic-auth gate, in front) =====
+    // Trusted bypass: the panza daemon + the test harness pass headers.trustedUser → treated as an
+    // admin without a login (the live CGI never sets it, so the live site requires a real login).
+    let me = null;
+    if (h.trustedUser) me = ensureTrustedAdmin(db, h.trustedUser);
+    else {
+      const id = verifyToken(parseCookies(h.cookie || "")[SESSION_COOKIE], SECRET);
+      if (id) me = getAccountById(db, id);
+    }
+    const uid = () => (me ? me.id : 0);
+    const needSetup = countAccounts(db) === 0;
+    const sb = () => ({ projects: projects(db), tags: allTags(db) }); // sidebar data for the logged-in auth pages
+
+    // ----- public auth routes (reachable without a session) -----
+    if (path === "/setup") {
+      if (!needSetup) return redirect(me ? "/" : "/login");
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const name = (body.get("name") || "").trim(), pass = body.get("password") || "";
+        if (!name || pass.length < 8) return html(V.renderSetup("Username required and password must be ≥ 8 characters."), 400);
+        const id = createAccount(db, name, pass, { role: "admin" });
+        if (!id) return html(V.renderSetup("Could not create the account (name taken?)."), 400);
+        return cookie("/", setSessionCookie(makeToken(id, SECRET)));
+      }
+      return html(V.renderSetup());
+    }
+    if (path === "/login") {
+      if (needSetup) return redirect("/setup");
+      if (me) return redirect("/");
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const u = verifyLogin(db, (body.get("name") || "").trim(), body.get("password") || "");
+        if (!u) return html(V.renderLogin("Wrong username or password."), 401);
+        return cookie(u.must_change ? "/account" : "/", setSessionCookie(makeToken(u.id, SECRET)));
+      }
+      return html(V.renderLogin());
+    }
+    if (path === "/logout") return cookie("/login", clearSessionCookie());
+
+    // ----- gate: everything below requires a session -----
+    if (!me) {
+      if (needSetup) return redirect("/setup");
+      return method === "GET" ? redirect("/login") : { status: 401, type: "text/plain", body: "login required" };
+    }
+    // an admin-issued temporary password must be changed before anything else
+    if (me.must_change && path !== "/account") {
+      return method === "GET" ? redirect("/account") : { status: 403, type: "text/plain", body: "change your password first" };
+    }
+
+    // ----- self-service account (password change) -----
+    if (path === "/account") {
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        const cur = body.get("current") || "", next = body.get("password") || "";
+        if (next.length < 8) return html(V.renderAccount(me, "New password must be ≥ 8 characters.", null, sb()), 400);
+        if (!verifyPassword(cur, getAccountById(db, me.id).pw_hash)) return html(V.renderAccount(me, "Current password is wrong.", null, sb()), 401);
+        setPassword(db, me.id, next, { mustChange: false });
+        return html(V.renderAccount({ ...me, must_change: 0 }, null, "Password changed.", sb()));
+      }
+      return html(V.renderAccount(me, null, null, sb()));
+    }
+    // ----- admin: user management -----
+    if (path.startsWith("/admin/")) {
+      if (me.role !== "admin") return { status: 403, type: "text/plain", body: "admins only" };
+      if (isPost) {
+        if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
+        if (path === "/admin/useradd") {
+          const name = (body.get("name") || "").trim(), pass = body.get("password") || "";
+          if (name && pass.length >= 8) createAccount(db, name, pass, { role: body.get("role") === "admin" ? "admin" : "member", mustChange: true });
+          return redirect("/admin/users");
+        }
+        if (path === "/admin/userreset") {
+          const id = +body.get("id"), pass = body.get("password") || "";
+          if (id && pass.length >= 8) setPassword(db, id, pass, { mustChange: true });
+          return redirect("/admin/users");
+        }
+        if (path === "/admin/userdel") {
+          const id = +body.get("id");
+          if (id && id !== me.id) deleteAccount(db, id); // never delete yourself
+          return redirect("/admin/users");
+        }
+        return redirect("/admin/users");
+      }
+      return html(V.renderAdminUsers(listAccounts(db), me, sb()));
+    }
 
     if (method === "POST") {
       if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
@@ -199,7 +289,7 @@ export function createApp(dbPath) {
       projects: projects(db),
       tags: allTags(db),
       bset: bookmarkedSet(db, uid()),
-      user: h.user || "",
+      user: me ? me.display_name || me.name : "",
     });
 
     if (path === "/") {

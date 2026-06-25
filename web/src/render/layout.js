@@ -31,7 +31,7 @@ export function layout(title, main, { q = "", user = "", projects = [], tags = [
 <title>${esc(title)}</title><link rel="stylesheet" href="/style.css?v=${ASSET_V}"><link rel="stylesheet" href="/katex/katex.min.css"><script src="/app.js?v=${ASSET_V}" defer></script></head><body>
 <header><button class="hamburger" type="button" aria-label="toggle sidebar" title="menu">☰</button><a href="/" class="brand">Archeion</a>
 <form action="/search" method="get" class="search">${scope ? `<input type="hidden" name="project" value="${esc(scope)}">` : ""}${fieldSelector(fields)}<input name="q" value="${esc(q)}" placeholder="${scope ? `search in ${esc(scope)} (figures &amp; Pinax)…` : "search projects…"}" autocomplete="off"></form>
-<span class="who">${esc(user)}</span></header>
+<span class="who">${user ? `${esc(user)} · <a href="/account">account</a> · <a href="/logout">logout</a>` : ""}</span></header>
 <div class="wrap">${sideNav({ projects, tags })}<main>${main}</main></div></body></html>`;
 }
 

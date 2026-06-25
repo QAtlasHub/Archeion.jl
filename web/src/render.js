@@ -6,3 +6,4 @@
 export { mdHtml } from "./render/util.js";
 export * from "./render/pages.js";
 export * from "./render/notes.js";
+export * from "./render/auth.js";
