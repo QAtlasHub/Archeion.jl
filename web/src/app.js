@@ -8,6 +8,7 @@ import {
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
+  addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation, relatedNotes, graphData,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
   projectContext, contextMarkdown, setTodoDone,
   getAccount, getAccountById, getByInviteToken, countAccounts, listAccounts, createAccount, inviteAccount, revokePassword, setPassword, verifyLogin, verifyPassword, deleteAccount, ensureTrustedAdmin,
@@ -180,8 +181,24 @@ export function createApp(dbPath) {
       if (!sameOrigin(h)) return { status: 403, type: "text/plain", body: "CSRF: bad origin" };
       // members may only bookmark (personal) + comment (discussion); all management/destructive writes
       // (notes, archive, importance, tags, projects, …) are admin-only. The UI also hides these.
-      if (me.role !== "admin" && !(path === "/bookmark" || path.endsWith("/comment")))
+      if (me.role !== "admin" && !(path === "/bookmark" || path.endsWith("/comment") || path.includes("/annotations")))
         return { status: 403, type: "text/plain", body: "admins only" };
+      const am = path.match(/^\/api\/note\/(.+)\/annotations(\/del)?$/);
+      if (am) {
+        const nid = decodeURIComponent(am[1]);
+        const note = getNote(db, nid);
+        if (!note) return { status: 404, type: "text/plain", body: "no note" };
+        if (am[2]) { // /annotations/del — own annotation, or admin
+          const a = getNoteAnnotation(db, +body.get("aid"));
+          if (a && a.note_id === note.id && (a.user_id === me.id || me.role === "admin")) removeNoteAnnotation(db, a.id);
+          return { status: 204, type: "text/plain", body: "" };
+        }
+        if (!note.pinned) return { status: 403, type: "text/plain", body: "annotations are for structure notes only" };
+        const aid = addNoteAnnotation(db, note.id, uid(), { exact: body.get("exact"), prefix: body.get("prefix"), suffix: body.get("suffix") }, body.get("body_md"));
+        if (!aid) return { status: 400, type: "text/plain", body: "bad annotation" };
+        const a = noteAnnotations(db, note.id).find((x) => x.id === aid);
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ ...a, body_html: V.mdHtml(a.body_md), can_delete: true }) };
+      }
       if (path === "/bookmark") {
         toggleBookmark(db, uid(), body.get("kind") === "figure" ? "figure" : "record", body.get("id") || "");
         return ok(back(h, "/"));
@@ -369,16 +386,21 @@ export function createApp(dbPath) {
     if (path === "/notes") {
       return html(V.renderNotes(allNotesForDisplay(db), side()));
     }
+    if (path === "/graph") {
+      // the link graph: notes (primary) + the projects/records they reference, drawn from the same
+      // [[mention]]/![[embed]] data as the per-note Related panel. Read-only; both roles may view.
+      return html(V.renderGraph(side()));
+    }
     if (path.startsWith("/show/")) {
       // the advisor-facing view of a pinned structure note: home-style header + sidebar/hamburger menu
       const note = noteForDisplay(db, decodeURIComponent(path.slice(6)));
       return html(V.renderShow(note, side()), note ? 200 : 404);
     }
     if (path.startsWith("/note/")) {
-      // "open" a note: the working view — rendered note + comments / annotations (a normal app page)
+      // "open" a note: the working view — rendered note + related (links/backlinks) + comments
       const id = decodeURIComponent(path.slice(6));
       const note = noteForDisplay(db, id);
-      return html(V.renderNoteView(note, note ? noteComments(db, id) : [], side()), note ? 200 : 404);
+      return html(V.renderNoteView(note, note ? noteComments(db, id) : [], note ? relatedNotes(db, id) : [], side()), note ? 200 : 404);
     }
     if (path === "/compose") {
       if (me.role !== "admin") return redirect("/notes"); // composing/editing notes is admin-only
@@ -422,6 +444,7 @@ export function createApp(dbPath) {
         return json(ctx);
       }
     }
+    if (path === "/api/graph") return json(graphData(db)); // {nodes,edges} for the /graph canvas
     {
       // JSON for inject.js (the overlay on a Pinax page): record meta + tags + runs + bookmark + comments
       const m = path.match(/^\/api\/record\/(.+)$/);
@@ -443,8 +466,21 @@ export function createApp(dbPath) {
       }
     }
     {
+      // structure-note annotations (passage highlights) — for the /show annotator's load + live poll
+      const am = path.match(/^\/api\/note\/(.+)\/annotations$/);
+      if (am) {
+        const id = decodeURIComponent(am[1]);
+        if (!getNote(db, id)) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
+        const list = noteAnnotations(db, id).map((a) => ({
+          id: a.id, author: a.author, created_at: a.created_at, anchor: a.anchor,
+          body_html: V.mdHtml(a.body_md), can_delete: a.user_id === me.id || me.role === "admin",
+        }));
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ annotations: list }) };
+      }
+    }
+    {
       // JSON for the note "open" view live-poll: merge new comments without losing the draft
-      const m = path.match(/^\/api\/note\/(.+)$/);
+      const m = path.match(/^\/api\/note\/([^/]+)$/); // [^/] so it doesn't swallow /…/annotations
       if (m) {
         const id = decodeURIComponent(m[1]);
         const note = getNote(db, id);

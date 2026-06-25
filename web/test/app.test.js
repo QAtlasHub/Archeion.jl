@@ -528,6 +528,70 @@ test("live: /api/record + /api/note expose updated_at + comment ids (for the dra
   assert.equal(get(app, "/api/note/999999").status, 404);
 });
 
+test("annotations: structure-note only — add (anchored) / list / delete; non-pinned rejected", () => {
+  const app = setup();
+  const anno = (id, form) => app("POST", "/api/note/" + id + "/annotations", new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams(form),
+  });
+  const sid = post(app, "/noteadd", { title: "SN", body: "the magnetization peaks near beta-c here", pinned: "1", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  // add a passage annotation (text-quote anchor + body)
+  const r = anno(sid, { exact: "peaks near beta-c", prefix: "magnetization ", suffix: " here", body_md: "is this real?" });
+  assert.equal(r.status, 200);
+  const a = JSON.parse(r.body);
+  assert.ok(a.id); assert.equal(a.anchor.exact, "peaks near beta-c"); assert.match(a.body_html, /is this real/); assert.ok(a.can_delete);
+  // list
+  const list = JSON.parse(get(app, "/api/note/" + sid + "/annotations").body).annotations;
+  assert.equal(list.length, 1); assert.equal(list[0].id, a.id); assert.equal(list[0].anchor.exact, "peaks near beta-c");
+  // delete (own/admin)
+  assert.equal(post(app, "/api/note/" + sid + "/annotations/del", { aid: a.id }).status, 204);
+  assert.equal(JSON.parse(get(app, "/api/note/" + sid + "/annotations").body).annotations.length, 0);
+  // a NON-pinned note refuses annotations (structure notes only)
+  const pid = post(app, "/noteadd", { title: "plain", body: "y", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  assert.equal(anno(pid, { exact: "y", body_md: "no" }).status, 403);
+});
+
+test("notes: note→note + project mentions (graph edges) — links out + backlinks on /note/:id", () => {
+  const app = setup();
+  const a = post(app, "/noteadd", { title: "Alpha", body: "root", pinned: "1", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  const b = post(app, "/noteadd", { title: "Beta", body: `see [[note:${a}]] and [[proj]]`, from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  // Beta's view: links out resolve to the note + the project
+  const bv = get(app, "/note/" + b).body;
+  assert.match(bv, new RegExp(`class="rel-chip rel-note" href="/note/${a}"`));
+  assert.match(bv, /class="rel-chip rel-project" href="\/p\/proj"/);
+  // Alpha's view: backlink from Beta
+  const av = get(app, "/note/" + a).body;
+  assert.match(av, /← linked from/);
+  assert.match(av, new RegExp(`href="/note/${b}"`));
+  // a bare [[Title]] also resolves to the note (after record/project miss)
+  const c = post(app, "/noteadd", { title: "Gamma", body: "ref [[Alpha]]", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  assert.match(get(app, "/note/" + c).body, new RegExp(`class="rel-chip rel-note" href="/note/${a}"`));
+  assert.match(get(app, "/note/" + a).body, new RegExp(`href="/note/${c}"`)); // Gamma is also a backlink
+});
+
+test("graph: /api/graph nodes+edges from mentions/embeds/scope; /graph page renders", () => {
+  const app = setup();
+  // a global note embedding the seeded record p/r1 and mentioning its project
+  const a = post(app, "/noteadd", { title: "Alpha", body: "![[p/r1]] in [[proj]]", pinned: "1", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  // a project-scoped note that links to Alpha (note→note edge) — scope gives an implicit note→project edge
+  const b = post(app, "/noteadd", { scope: "proj", title: "Beta", body: `builds on [[note:${a}]]`, from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
+  const g = JSON.parse(get(app, "/api/graph").body);
+  const ids = new Set(g.nodes.map((n) => n.id));
+  assert.ok(ids.has(`note:${a}`) && ids.has(`note:${b}`)); // both notes are nodes
+  assert.ok(ids.has("proj:proj"));                          // project node
+  assert.ok(ids.has("rec:p/r1"));                           // the embedded record was pulled in
+  const has = (s, t) => g.edges.some((e) => e.source === s && e.target === t);
+  assert.ok(has(`note:${a}`, "rec:p/r1"));   // embed edge
+  assert.ok(has(`note:${a}`, "proj:proj"));  // mention edge
+  assert.ok(has(`note:${b}`, `note:${a}`));  // note→note edge
+  assert.ok(has(`note:${b}`, "proj:proj"));  // implicit scope edge
+  assert.ok(has("rec:p/r1", "proj:proj"));   // record→its project
+  const r = get(app, "/graph");
+  assert.equal(r.status, 200);
+  assert.match(r.body, /id="graph"/);            // the canvas
+  assert.match(r.body, /\/graph\.js\?v=/);       // the client
+  assert.match(r.body, /🕸 Graph/);              // sidebar nav link present
+});
+
 test.after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
 });

@@ -30,6 +30,7 @@ cp public/app.js            build/app.js      # progressive-enhancement client (
 cp public/compose-editor.js build/compose-editor.js  # CodeMirror 6 structure-note editor (served at /compose-editor.js)
 cp public/inject.js         build/inject.js   # Archeion overlay injected into Pinax run pages
 cp public/inject.css        build/inject.css
+cp public/graph.js          build/graph.js    # force-directed link-graph client (served at /graph.js)
 cp -r public/katex          build/katex       # self-hosted KaTeX css + woff2 fonts (served at /katex/*)
 
 if [ "${ARCHEION_INCLUDE_DB:-}" = "1" ]; then

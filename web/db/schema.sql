@@ -146,6 +146,18 @@ CREATE TABLE IF NOT EXISTS note_comments (
     created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_note_comments_note ON note_comments(note_id);
+-- inline annotations on a STRUCTURE note (pinned): a passage highlight + a margin note. anchor is a
+-- text-quote (JSON {exact,prefix,suffix}) so it survives edits/re-renders. App-owned (human-side; the
+-- human↔LLM loop stays on the records/Pinax discussion, not here).
+CREATE TABLE IF NOT EXISTS note_annotations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id    INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    user_id    INTEGER REFERENCES users(id),
+    anchor     TEXT    NOT NULL,            -- JSON: {exact, prefix, suffix}
+    body_md    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_note_annotations_note ON note_annotations(note_id);
 
 -- ===================== USERS + PER-USER (app-owned) =====================
 CREATE TABLE IF NOT EXISTS users (

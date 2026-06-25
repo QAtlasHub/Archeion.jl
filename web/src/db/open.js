@@ -36,6 +36,13 @@ export function openDb(path) {
       "body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
   db.exec("CREATE INDEX IF NOT EXISTS idx_note_comments_note ON note_comments(note_id)");
+  // inline annotations on a structure note (passage highlight + margin note; text-quote anchor)
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS note_annotations (id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+      "note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE, user_id INTEGER, " +
+      "anchor TEXT NOT NULL, body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_note_annotations_note ON note_annotations(note_id)");
   // app-level accounts (login identity, layered above the shared Basic-auth gate). Created here too so
   // a node-only / freshly-initialized DB has it; declared in schema.sql for ingest-built DBs.
   db.exec(

@@ -24,8 +24,26 @@ export function resolveMentions(db, targets) {
   return (targets || []).map((t) => {
     if (db.prepare("SELECT 1 FROM records WHERE id = ?").get(t)) return { target: t, kind: "record", ref: `/r/${t}` };
     if (db.prepare("SELECT 1 FROM projects WHERE name = ?").get(t)) return { target: t, kind: "project", ref: `/p/${t}` };
+    // note → note: explicit [[note:<id-or-title>]] or a bare [[Title]] matching a note title
+    const key = t.startsWith("note:") ? t.slice(5).trim() : t;
+    let n = /^\d+$/.test(key) ? db.prepare("SELECT id, title, pinned FROM notes WHERE id = ?").get(+key) : null;
+    if (!n) n = db.prepare("SELECT id, title, pinned FROM notes WHERE title = ? ORDER BY pinned DESC, id LIMIT 1").get(key);
+    if (n) return { target: t, kind: "note", id: n.id, title: n.title || `note ${n.id}`, ref: `/note/${n.id}` };
     return { target: t, kind: "unresolved", ref: null };
   });
+}
+// backlinks: notes that mention THIS note (by [[note:<id>]], [[note:<title>]], or a bare [[<title>]])
+export function relatedNotes(db, noteId) {
+  const note = getNote(db, noteId);
+  if (!note) return [];
+  const keys = new Set([`note:${noteId}`]);
+  if ((note.title || "").trim()) { keys.add(`note:${note.title}`); keys.add(note.title); }
+  const seen = new Set(), out = [];
+  for (const k of keys) for (const n of notesMentioning(db, k)) {
+    if (n.id === note.id || seen.has(n.id)) continue;
+    seen.add(n.id); out.push({ id: n.id, title: n.title, scope: n.scope });
+  }
+  return out;
 }
 // resolve an embed target to a figure / a section / a record (+ its figures). Every kind also carries
 // the source record id so the rendered block can link to its Pinax page.
@@ -134,12 +152,73 @@ export function noteComments(db, noteId) {
     .prepare("SELECT c.id, c.body_md, c.created_at, COALESCE(u.name,'anon') AS author FROM note_comments c LEFT JOIN users u ON u.id = c.user_id WHERE c.note_id = ? ORDER BY c.id")
     .all(noteId);
 }
+// inline annotations on a structure note (passage highlight + margin note). anchor = {exact,prefix,suffix}.
+const safeParse = (s) => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
+export function addNoteAnnotation(db, noteId, userId, anchor, bodyMd) {
+  bodyMd = String(bodyMd || "").trim();
+  if (!bodyMd || !anchor || !anchor.exact) return null;
+  return db.prepare("INSERT INTO note_annotations (note_id, user_id, anchor, body_md) VALUES (?,?,?,?)")
+    .run(noteId, userId ?? null, JSON.stringify({ exact: String(anchor.exact), prefix: String(anchor.prefix || ""), suffix: String(anchor.suffix || "") }), bodyMd).lastInsertRowid;
+}
+export function noteAnnotations(db, noteId) {
+  return db
+    .prepare("SELECT a.id, a.user_id, a.anchor, a.body_md, a.created_at, COALESCE(u.name,'anon') AS author FROM note_annotations a LEFT JOIN users u ON u.id = a.user_id WHERE a.note_id = ? ORDER BY a.id")
+    .all(noteId)
+    .map((a) => ({ ...a, anchor: safeParse(a.anchor) }));
+}
+export function getNoteAnnotation(db, id) {
+  return db.prepare("SELECT id, note_id, user_id FROM note_annotations WHERE id = ?").get(id);
+}
+export function removeNoteAnnotation(db, id) {
+  return db.prepare("DELETE FROM note_annotations WHERE id = ?").run(id).changes;
+}
 // archive/unarchive = move a note out of the active list (still in search / the archived section)
 export function setNoteArchived(db, id, on) {
   const n = db.prepare("SELECT 1 FROM notes WHERE id = ?").get(id);
   if (!n) return false;
   db.prepare("UPDATE notes SET archived = ?, updated_at = datetime('now') WHERE id = ?").run(on ? 1 : 0, id);
   return true;
+}
+
+// the whole link graph for /graph: notes (primary) + the projects/records they connect to. Edges
+// come from the SAME [[mention]] / ![[embed]] data the Related panel uses, plus two implicit edges:
+// note→project (a note's scope) and record→project (a record belongs to a project). Node ids are
+// type-prefixed (note:<id> / proj:<name> / rec:<id>) so the three id spaces never collide. Records
+// appear only when a note references them (an unreferenced record would float disconnected).
+export function graphData(db) {
+  const nodes = new Map(), edges = [], eseen = new Set();
+  const put = (id, type, label, ref, extra = {}) => { if (!nodes.has(id)) nodes.set(id, { id, type, label, ref, ...extra }); return id; };
+  const link = (s, t, kind) => {
+    if (!s || !t || s === t) return;
+    const k = `${s}|${t}`; if (eseen.has(k)) return; eseen.add(k);
+    edges.push({ source: s, target: t, kind });
+  };
+  const proj = (name) => put(`proj:${name}`, "project", name, `/p/${encodeURIComponent(name)}`);
+  const rec = (id) => {
+    const key = `rec:${id}`;
+    if (!nodes.has(key)) {
+      const r = db.prepare("SELECT id, title, project FROM records WHERE id = ?").get(id);
+      if (!r) return null;
+      put(key, "record", r.title || r.id, `/r/${encodeURIComponent(r.id)}`, { project: r.project || "" });
+    }
+    return key;
+  };
+  for (const p of db.prepare("SELECT name FROM projects ORDER BY name").all()) proj(p.name);
+  for (const n of db.prepare("SELECT id, title, scope, body_md, pinned FROM notes").all()) {
+    const nid = put(`note:${n.id}`, "note", n.title || `note ${n.id}`, `/note/${n.id}`, { pinned: !!n.pinned });
+    if (n.scope) link(nid, proj(n.scope), "scope");
+    for (const m of resolveMentions(db, parseMentions(n.body_md))) {
+      if (m.kind === "note") link(nid, `note:${m.id}`, "note");
+      else if (m.kind === "project") link(nid, proj(m.target), "mention");
+      else if (m.kind === "record") { const rk = rec(m.target); if (rk) link(nid, rk, "mention"); }
+    }
+    for (const e of resolveEmbeds(db, parseEmbeds(n.body_md))) {
+      const id = e.kind === "figure" ? e.record : (e.record && e.record.id); // figure → record id string; section/record → {id}
+      if (id) { const rk = rec(id); if (rk) link(nid, rk, "embed"); }
+    }
+  }
+  for (const node of [...nodes.values()]) if (node.type === "record" && node.project) link(node.id, proj(node.project), "in");
+  return { nodes: [...nodes.values()].map(({ project, ...n }) => n), edges }; // strip the internal record.project
 }
 
 // backlinks: notes that mention a given target (project name or record id)

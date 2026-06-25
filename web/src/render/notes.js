@@ -145,7 +145,7 @@ function noteArticle(note) {
 // WITH the home-style header + sidebar/hamburger so it's a fully navigable Archeion page).
 export function renderShow(note, { projects = [], tags = [] } = {}) {
   if (!note) return presentLayout("Not found", `<article class="present"><p class="empty">Page not found.</p></article>`, { projects, tags });
-  return presentLayout(note.title || "Archeion", noteArticle(note), { scope: note.scope, id: note.id, projects, tags });
+  return presentLayout(note.title || "Archeion", noteArticle(note), { scope: note.scope, id: note.id, projects, tags, annot: note.pinned ? note.id : "" });
 }
 
 // inline composer preview (POST /api/note/preview): the SAME article, but CHROME-FREE — it renders
@@ -157,17 +157,25 @@ export function renderNotePreview(note) {
 
 // "open" a note → its WORKING view: the rendered note + a comments / annotations thread. A normal app
 // page (home header + sidebar), unlike the clean advisor /show. Available for EVERY note (pinned or not).
-export function renderNoteView(note, comments = [], { projects = [], tags = [], user = "" } = {}) {
+export function renderNoteView(note, comments = [], related = [], { projects = [], tags = [], user = "" } = {}) {
   if (!note) return layout("Not found", `<p class="empty">Note not found.</p>`, { projects, tags, user });
   const actions = `<div class="nv-actions">` +
     `<a class="nv-btn" href="/compose?id=${note.id}" title="edit in the composer">✎ edit</a>` +
     (note.pinned ? `<a class="nv-btn" href="/show/${note.id}" title="clean advisor page">advisor view ↗</a>` : "") +
     `<a class="nv-btn" href="/notes">← all notes</a></div>`;
+  // related = the link graph around this note: what it references ([[project]]/[[record]]/[[note:…]])
+  // + which notes reference it (backlinks). This is the edge data the future graph view reads.
+  const out = (note.mentions || []).filter((m) => m.ref)
+    .map((m) => `<a class="rel-chip rel-${m.kind}" href="${m.ref}">${esc(m.kind === "note" ? (m.title || m.target) : m.target)}</a>`).join(" ");
+  const back = (related || []).map((r) => `<a class="rel-chip rel-note" href="/note/${r.id}">${esc(r.title || "(untitled)")}</a>`).join(" ");
+  const rel = (out || back)
+    ? `<section class="nv-rel">${out ? `<div class="rel-row"><span class="rel-k">links →</span> ${out}</div>` : ""}${back ? `<div class="rel-row"><span class="rel-k">← linked from</span> ${back}</div>` : ""}</section>`
+    : "";
   const cItem = (c) => `<div class="nv-comment" data-cid="${c.id}"><div class="nv-cmeta muted">${esc(c.author || "anon")} · ${esc((c.created_at || "").slice(0, 16))}</div><div class="md nv-cbody">${md.render(c.body_md || "")}</div></div>`;
   const disc = `<section class="nv-disc"><h2>Comments &amp; annotations <span class="muted">(${comments.length})</span></h2>` +
     `<div class="nv-comments">${comments.length ? comments.map(cItem).join("") : `<p class="empty">No comments yet — add one below.</p>`}</div>` +
     `<form method="post" action="/note/${note.id}/comment" class="nv-cform"><textarea name="body_md" rows="3" required placeholder="comment / annotation (markdown)…"></textarea><div class="note-actions"><button>add comment</button></div></form></section>`;
-  return layout(note.title || "Note", `${actions}${noteArticle(note)}${disc}`, { projects, tags, user, scope: note.scope });
+  return layout(note.title || "Note", `${actions}${noteArticle(note)}${rel}${disc}`, { projects, tags, user, scope: note.scope });
 }
 
 // the structure-note composer: LEFT = click Pinax/figures to embed, RIGHT = markdown editor + live

@@ -165,6 +165,23 @@ h3 { font-size: .8rem; color: var(--muted); margin: 1.2rem 0 .5rem; }
 .nv-cform textarea { font: inherit; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); width: 100%; box-sizing: border-box; }
 .nv-cform button { align-self: flex-start; cursor: pointer; font: inherit; font-size: .85rem; padding: .35rem .85rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
 .nv-cform button:hover { border-color: var(--accent); }
+/* related panel on /note/:id — link graph edges (out + backlinks) around a note */
+.nv-rel { max-width: 820px; margin: 1.2rem 0; display: flex; flex-direction: column; gap: .35rem; }
+.rel-row { font-size: .85rem; }
+.rel-k { color: var(--muted); margin-right: .3rem; }
+.rel-chip { display: inline-block; font-size: .8rem; padding: .15rem .55rem; margin: .1rem .1rem .1rem 0; border: 1px solid var(--line); border-radius: 999px; color: var(--accent); }
+.rel-chip:hover { border-color: var(--accent); text-decoration: none; }
+.rel-chip.rel-project { color: #0369a1; }
+.rel-chip.rel-record { color: var(--fg); }
+.rel-chip.rel-note { color: #7048e8; }
+/* graph view — full-surface canvas with an overlaid legend */
+.graph-wrap { position: relative; height: calc(100vh - 150px); min-height: 460px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+#graph { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.graph-legend { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; align-items: center; font-size: .78rem; color: var(--muted); background: rgba(255,255,255,.9); padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); }
+.graph-legend .gl { font-size: 1rem; line-height: 1; margin-left: 8px; }
+.graph-legend .gl:first-child { margin-left: 0; }
+.gl-note { color: #7048e8; } .gl-project { color: #0369a1; } .gl-record { color: #2b8a3e; }
+.graph-hint { margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--line); }
 /* auth pages (login / setup): a minimal centered card; account / admin use the normal app layout */
 .auth-body { display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: var(--bg); }
 .auth-card { width: min(92vw, 360px); background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 1.6rem 1.4rem; }
@@ -187,6 +204,25 @@ h3 { font-size: .8rem; color: var(--muted); margin: 1.2rem 0 .5rem; }
 .admin-acts button.danger:hover { border-color: #c0392b; color: #c0392b; }
 .copy-link { cursor: pointer; font: inherit; font-size: .78rem; padding: .12rem .5rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
 .copy-link:hover { border-color: var(--accent); }
+/* structure-note annotator (/show): inline highlights + a list of margin notes below the article */
+mark.anno { background: #fff3bf; border-radius: 2px; cursor: pointer; }
+mark.anno.anno-flash { background: #ffd43b; }
+.anno-list { max-width: 820px; margin: 2.2rem auto 0; }
+.anno-list h2 { font-size: 1.1rem; }
+.anno-items { display: flex; flex-direction: column; gap: .6rem; }
+.anno-item { position: relative; background: var(--card); border: 1px solid var(--line); border-left: 3px solid #ffd43b; border-radius: var(--r); padding: .5rem .8rem; cursor: pointer; }
+.anno-meta { font-size: .75rem; }
+.anno-quote { font-size: .85rem; color: var(--muted); font-style: italic; margin: .15rem 0; }
+.anno-body { font-size: .92rem; }
+.anno-body > :first-child { margin-top: 0; } .anno-body > :last-child { margin-bottom: 0; }
+.anno-del { position: absolute; top: .35rem; right: .5rem; border: none; background: none; color: var(--muted); cursor: pointer; font-size: 1rem; opacity: .5; }
+.anno-del:hover { opacity: 1; color: #c0392b; }
+.anno-add-btn { position: fixed; z-index: 50; cursor: pointer; font: inherit; font-size: .8rem; padding: .25rem .7rem; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 999px; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+.anno-form { position: fixed; z-index: 50; width: min(90vw, 300px); background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: .6rem; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+.anno-form textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); resize: vertical; }
+.anno-form-acts { display: flex; gap: .5rem; margin-top: .4rem; }
+.anno-form-acts button { cursor: pointer; font: inherit; font-size: .8rem; padding: .25rem .7rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+.anno-form-acts .anno-save { border-color: var(--accent); background: var(--accent); color: #fff; }
 
 /* structure notes: pin / show, ![[embeds]], the embed-copy button, and the advisor present view */
 .note.pinned { border-color: #eac54f; background: #fffdf5; }

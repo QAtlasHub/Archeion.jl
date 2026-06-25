@@ -331,5 +331,115 @@
     document.addEventListener("visibilitychange", () => { if (!document.hidden) pollNote(); });
   })();
 
-  console.log("[archeion] app.js loaded (v40 — live poll: figure refresh + comment merge, draft-safe)");
+  // ---- structure-note annotator (/show, pinned): select a passage → margin note; text-quote anchored ----
+  (() => {
+    const noteId = document.body.dataset.note;
+    const article = document.querySelector(".present");
+    if (!noteId || !article) return;
+    const api = "/api/note/" + encodeURIComponent(noteId) + "/annotations";
+    const seen = new Set();
+    const panel = document.createElement("section");
+    panel.className = "anno-list";
+    panel.innerHTML = `<h2>Annotations <span class="muted anno-count">(0)</span></h2><div class="anno-items"></div>`;
+    article.after(panel);
+    const itemsEl = panel.querySelector(".anno-items");
+    const recount = () => { panel.querySelector(".anno-count").textContent = `(${itemsEl.querySelectorAll(".anno-item").length})`; };
+
+    // text-quote highlight: concat the article's text nodes, locate exact (disambiguated by prefix/suffix), wrap segments
+    const buildIndex = () => {
+      const nodes = []; let text = "";
+      const w = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
+      let n; while ((n = w.nextNode())) { nodes.push({ node: n, start: text.length }); text += n.nodeValue; }
+      return { text, nodes };
+    };
+    const locate = (idx, a) => {
+      const t = idx.text; let from = 0, p;
+      while ((p = t.indexOf(a.exact, from)) !== -1) {
+        const pre = t.slice(Math.max(0, p - (a.prefix || "").length), p);
+        const suf = t.slice(p + a.exact.length, p + a.exact.length + (a.suffix || "").length);
+        if ((!a.prefix || pre.endsWith(a.prefix)) && (!a.suffix || suf.startsWith(a.suffix))) return [p, p + a.exact.length];
+        from = p + 1;
+      }
+      const q = t.indexOf(a.exact); return q === -1 ? null : [q, q + a.exact.length];
+    };
+    const wrap = (idx, start, end, aid) => {
+      const segs = [];
+      for (const { node, start: ns } of idx.nodes) {
+        const ne = ns + node.nodeValue.length;
+        if (ne <= start || ns >= end) continue;
+        segs.push({ node, s: Math.max(start, ns) - ns, e: Math.min(end, ne) - ns });
+      }
+      for (let i = segs.length - 1; i >= 0; i--) { // reverse so earlier nodes' offsets stay valid
+        const { node, s, e } = segs[i];
+        const r = document.createRange(); r.setStart(node, s); r.setEnd(node, e);
+        const m = document.createElement("mark"); m.className = "anno"; m.dataset.aid = String(aid);
+        try { r.surroundContents(m); } catch { /* crosses a boundary — skip */ }
+      }
+    };
+    const highlight = (a) => { const idx = buildIndex(); const r = locate(idx, a.anchor || {}); if (r) wrap(idx, r[0], r[1], a.id); return !!r; };
+
+    const addItem = (a, anchored) => {
+      const d = document.createElement("div"); d.className = "anno-item"; d.dataset.aid = String(a.id);
+      const meta = document.createElement("div"); meta.className = "anno-meta muted";
+      meta.textContent = `${a.author || "anon"} · ${(a.created_at || "").slice(0, 16)}${anchored ? "" : " · (text moved)"}`;
+      const quote = document.createElement("div"); quote.className = "anno-quote"; quote.textContent = "“" + (((a.anchor || {}).exact) || "").slice(0, 80) + "”";
+      const body = document.createElement("div"); body.className = "md anno-body"; body.innerHTML = a.body_html || "";
+      d.append(meta, quote, body);
+      if (a.can_delete) {
+        const del = document.createElement("button"); del.type = "button"; del.className = "anno-del"; del.textContent = "×"; del.title = "delete";
+        del.onclick = () => { save(api + "/del", { aid: a.id }); d.remove(); document.querySelectorAll(`mark.anno[data-aid="${a.id}"]`).forEach((m) => m.replaceWith(document.createTextNode(m.textContent))); recount(); };
+        d.append(del);
+      }
+      d.onclick = (e) => { if (e.target.classList.contains("anno-del")) return; const m = document.querySelector(`mark.anno[data-aid="${a.id}"]`); if (m) { m.scrollIntoView({ behavior: "smooth", block: "center" }); m.classList.add("anno-flash"); setTimeout(() => m.classList.remove("anno-flash"), 1500); } };
+      itemsEl.appendChild(d); recount();
+    };
+    const render = (a) => { if (seen.has(String(a.id))) return; seen.add(String(a.id)); addItem(a, highlight(a)); };
+
+    let btn = null, form = null;
+    const clearUI = () => { btn?.remove(); btn = null; form?.remove(); form = null; };
+    document.addEventListener("mousedown", (e) => { if (form && !form.contains(e.target) && e.target !== btn) clearUI(); });
+    article.addEventListener("mouseup", () => {
+      const sel = getSelection();
+      if (!sel || sel.isCollapsed) return;
+      const exact = sel.toString();
+      if (!exact.trim() || exact.length > 600) return;
+      const range = sel.getRangeAt(0);
+      if (!article.contains(range.startContainer)) return;
+      const idx = buildIndex();
+      let g = -1; for (const { node, start } of idx.nodes) if (node === range.startContainer) { g = start + range.startOffset; break; }
+      if (g < 0) return;
+      const prefix = idx.text.slice(Math.max(0, g - 32), g), suffix = idx.text.slice(g + exact.length, g + exact.length + 32);
+      const rect = range.getBoundingClientRect();
+      clearUI();
+      btn = document.createElement("button"); btn.type = "button"; btn.className = "anno-add-btn"; btn.textContent = "✎ annotate";
+      btn.style.left = Math.min(rect.left, innerWidth - 130) + "px"; btn.style.top = (rect.bottom + 6) + "px";
+      btn.onclick = () => {
+        btn.remove(); btn = null;
+        form = document.createElement("div"); form.className = "anno-form";
+        form.style.left = Math.min(rect.left, innerWidth - 320) + "px"; form.style.top = (rect.bottom + 6) + "px";
+        form.innerHTML = `<textarea rows="3" placeholder="annotation (markdown)…"></textarea><div class="anno-form-acts"><button type="button" class="anno-save">save</button><button type="button" class="anno-cancel">cancel</button></div>`;
+        document.body.appendChild(form);
+        form.querySelector("textarea").focus();
+        form.querySelector(".anno-cancel").onclick = clearUI;
+        form.querySelector(".anno-save").onclick = async () => {
+          const bodyMd = form.querySelector("textarea").value.trim(); if (!bodyMd) return;
+          try {
+            const res = await fetch(api, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded", "X-Requested-With": "fetch" }, body: new URLSearchParams({ exact, prefix, suffix, body_md: bodyMd }) });
+            if (res.ok) render(await res.json());
+          } catch { /* ignore */ }
+          clearUI(); getSelection().removeAllRanges();
+        };
+      };
+      document.body.appendChild(btn);
+    });
+
+    async function load() {
+      try { const d = await (await fetch(api, { headers: { "X-Requested-With": "fetch" } })).json(); for (const a of (d.annotations || [])) render(a); }
+      catch { /* transient */ }
+    }
+    load();
+    setInterval(() => { if (!document.hidden && !form) load(); }, 5000); // live-merge, but never while a draft form is open
+  })();
+
+  console.log("[archeion] app.js loaded (v41 — structure-note annotator on /show)");
 })();
