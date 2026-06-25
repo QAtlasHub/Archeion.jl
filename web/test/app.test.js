@@ -510,6 +510,24 @@ test("accounts: invite link — admin invites by name, the link lets the user se
   assert.equal(POST(app, "/login", { name: "advisor", password: "advisorpass123" }).status, 303);
 });
 
+test("live: /api/record + /api/note expose updated_at + comment ids (for the draft-safe merge poll)", () => {
+  const app = setup();
+  // record discussion
+  post(app, "/r/p/r1/comment", { body_md: "first note on this run" });
+  const rec = JSON.parse(get(app, "/api/record/p/r1").body);
+  assert.ok(rec.updated_at); // figure-freshness token
+  assert.ok(rec.comments[0].id); // stable identity for the merge
+  assert.match(rec.comments[0].body_html, /first note on this run/);
+  // note discussion
+  post(app, "/noteadd", { title: "LiveN", body: "x" });
+  const nid = get(app, "/notes").body.match(/data-note="(\d+)"/)[1];
+  post(app, "/note/" + nid + "/comment", { body_md: "a live comment" });
+  const note = JSON.parse(get(app, "/api/note/" + nid).body);
+  assert.ok(note.comments[0].id);
+  assert.match(note.comments[0].body_html, /a live comment/);
+  assert.equal(get(app, "/api/note/999999").status, 404);
+});
+
 test.after(() => {
   for (const s of ["", "-wal", "-shm"]) rmSync(dbPath + s, { force: true });
 });

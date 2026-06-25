@@ -434,11 +434,25 @@ export function createApp(dbPath) {
           importance: rec.importance, archived: !!rec.archived, admin: me.role === "admin",
           tags: recordTags(db, id), runs: recordRuns(db, id),
           bookmarked: bookmarkedSet(db, uid()).has("record:" + id),
+          updated_at: rec.updated_at, // figure-freshness token for the live poll (cache-bust on change)
           comments: recordComments(db, id).map((c) => ({
-            author: c.author, created_at: c.created_at, body_html: V.mdHtml(c.body_md),
+            id: c.id, author: c.author, created_at: c.created_at, body_html: V.mdHtml(c.body_md),
           })),
         };
         return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify(data) };
+      }
+    }
+    {
+      // JSON for the note "open" view live-poll: merge new comments without losing the draft
+      const m = path.match(/^\/api\/note\/(.+)$/);
+      if (m) {
+        const id = decodeURIComponent(m[1]);
+        const note = getNote(db, id);
+        if (!note) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({
+          updated_at: note.updated_at,
+          comments: noteComments(db, id).map((c) => ({ id: c.id, author: c.author, created_at: c.created_at, body_html: V.mdHtml(c.body_md) })),
+        }) };
       }
     }
     if (path.startsWith("/r/")) {

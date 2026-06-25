@@ -163,7 +163,7 @@ export function renderNoteView(note, comments = [], { projects = [], tags = [], 
     `<a class="nv-btn" href="/compose?id=${note.id}" title="edit in the composer">✎ edit</a>` +
     (note.pinned ? `<a class="nv-btn" href="/show/${note.id}" title="clean advisor page">advisor view ↗</a>` : "") +
     `<a class="nv-btn" href="/notes">← all notes</a></div>`;
-  const cItem = (c) => `<div class="nv-comment"><div class="nv-cmeta muted">${esc(c.author || "anon")} · ${esc((c.created_at || "").slice(0, 16))}</div><div class="md nv-cbody">${md.render(c.body_md || "")}</div></div>`;
+  const cItem = (c) => `<div class="nv-comment" data-cid="${c.id}"><div class="nv-cmeta muted">${esc(c.author || "anon")} · ${esc((c.created_at || "").slice(0, 16))}</div><div class="md nv-cbody">${md.render(c.body_md || "")}</div></div>`;
   const disc = `<section class="nv-disc"><h2>Comments &amp; annotations <span class="muted">(${comments.length})</span></h2>` +
     `<div class="nv-comments">${comments.length ? comments.map(cItem).join("") : `<p class="empty">No comments yet — add one below.</p>`}</div>` +
     `<form method="post" action="/note/${note.id}/comment" class="nv-cform"><textarea name="body_md" rows="3" required placeholder="comment / annotation (markdown)…"></textarea><div class="note-actions"><button>add comment</button></div></form></section>`;

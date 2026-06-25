@@ -305,5 +305,31 @@
 
   window.addEventListener("popstate", () => navSwap(location.href, false)); // back/forward → re-swap
   document.documentElement.classList.add("js"); // CSS then hides the now-redundant "set" buttons
-  console.log("[archeion] app.js loaded (v37 — accounts/roles/invite links)");
+  // /note/:id live: merge new comments (by data-cid) without clobbering the draft textarea
+  (() => {
+    const disc = document.querySelector(".nv-disc");
+    if (!disc || !location.pathname.startsWith("/note/")) return;
+    const id = location.pathname.slice("/note/".length);
+    const list = disc.querySelector(".nv-comments");
+    let busy = false;
+    async function pollNote() {
+      if (busy || document.hidden) return; busy = true;
+      try {
+        const d = await (await fetch("/api/note/" + encodeURIComponent(id), { headers: { "X-Requested-With": "fetch" } })).json();
+        const have = new Set([...list.querySelectorAll("[data-cid]")].map((n) => n.dataset.cid));
+        for (const c of (d.comments || [])) {
+          if (have.has(String(c.id))) continue;
+          list.querySelector(".empty")?.remove();
+          const node = document.createElement("div"); node.className = "nv-comment"; node.dataset.cid = String(c.id);
+          const m = document.createElement("div"); m.className = "nv-cmeta muted"; m.textContent = `${c.author || "anon"} · ${(c.created_at || "").slice(0, 16)}`;
+          const b = document.createElement("div"); b.className = "md nv-cbody"; b.innerHTML = c.body_html || "";
+          node.append(m, b); list.appendChild(node);
+        }
+      } catch { /* transient */ } finally { busy = false; }
+    }
+    setInterval(pollNote, 4000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) pollNote(); });
+  })();
+
+  console.log("[archeion] app.js loaded (v40 — live poll: figure refresh + comment merge, draft-safe)");
 })();
