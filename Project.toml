@@ -15,15 +15,17 @@ SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
-[sources]
-# Not yet in the General registry — pin to GitHub (rev=main) instead of local sibling
-# paths, so CI / a fresh clone can resolve them. ParamIO is a transitive dep of DataVault
-# (not used directly here); it must sit in [deps] for its git-url source to apply during
-# resolution, hence the Aqua stale_deps ignore in test/runtests.jl. Drop an entry once the
-# package lands in General.
-DataVault = {rev = "main", url = "https://github.com/sotashimozono/DataVault.jl"}
-ParamIO = {rev = "main", url = "https://github.com/sotashimozono/ParamIO.jl"}
-Pinax = {rev = "main", url = "https://github.com/sotashimozono/Pinax.jl"}
+[sources.DataVault]
+rev = "main"
+url = "https://github.com/sotashimozono/DataVault.jl"
+
+[sources.ParamIO]
+rev = "main"
+url = "https://github.com/sotashimozono/ParamIO.jl"
+
+[sources.Pinax]
+rev = "main"
+url = "https://github.com/sotashimozono/Pinax.jl"
 
 [compat]
 Aqua = "0.8"
@@ -32,7 +34,7 @@ DataVault = "0.7"
 Dates = "1"
 LibGit2 = "1"
 Markdown = "1"
-ParamIO = "0.3"
+ParamIO = "0.3, 0.4"
 Pinax = "0.27 - 0.40"
 SHA = "0.7"
 SQLite = "1"
