@@ -23,6 +23,8 @@
   mark.anno.anno-flash{outline:2px solid #f0a500}
   .anno-cmt{display:inline-flex;align-items:center;gap:3px;margin-left:8px;padding:2px 8px;border:1px solid #cfd8dc;background:#eceff1;color:#37474f;border-radius:6px;cursor:pointer;font:12px system-ui}
   .anno-cmt:hover{background:#cfd8dc}
+  .arx-caret{border:none;background:none;cursor:pointer;font:13px system-ui;color:#7a8a99;margin-right:6px;padding:0;vertical-align:middle}
+  section.section.arx-collapsed > *:not(h2){display:none}
   .anno-list{max-width:1180px;margin:28px auto;padding:0 16px;font:14px/1.55 system-ui,-apple-system,sans-serif}
   .anno-list h2{font-size:15px;border-top:1px solid #e3e3e3;padding-top:14px;color:#333}
   .anno-list .anno-count{color:#999;font-weight:400}
@@ -100,7 +102,7 @@
 
     // ── target lookup (for scroll-to + matching) ──
     const figFor = (figid) => [...document.querySelectorAll("figure")].find((f) => { const l = f.querySelector("img[alt], iframe[title]"); return l && (l.getAttribute("alt") || l.getAttribute("title")) === figid; });
-    const secFor = (title) => [...document.querySelectorAll("section.section")].find((s) => { const h = s.querySelector(":scope > h2"); return h && h.textContent.replace(/^[▾▸✎\s]*/, "").replace(/\s*✎.*$/, "").trim() === title; });
+    const secFor = (anchor) => document.getElementById(anchor) || [...document.querySelectorAll("section.section")].find((s) => s.id === anchor);
     const flash = (el) => { if (!el) return; el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("anno-flash"); setTimeout(() => el.classList.remove("anno-flash"), 1500); };
     const scrollToTarget = (a) => {
       if (a.target_kind === "figure") { const f = figFor(a.target_id); flash(f ? (f.querySelector("img,iframe") || f) : null); }
@@ -190,13 +192,28 @@
       dest.appendChild(b);
     });
 
-    // section: a ✎ on each section heading
-    document.querySelectorAll("section.section > h2").forEach((h) => {
-      const title = h.textContent.replace(/^[▾▸\s]*/, "").trim();
-      if (!title) return;
+    // section: a PERSISTENT fold caret + a ✎ comment on each heading, keyed by the section's stable
+    // anchor id so both the fold state (localStorage) and the comment survive navigation / re-renders.
+    const foldKey = (anchor) => "arxfold:" + rid + ":" + page + ":" + anchor;
+    document.querySelectorAll("section.section").forEach((sec) => {
+      const h = sec.querySelector(":scope > h2");
+      if (!h || h.querySelector(".arx-caret")) return; // need an h2; idempotent
+      const anchor = sec.id || h.textContent.trim();
+      let collapsed = false;
+      try { collapsed = localStorage.getItem(foldKey(anchor)) === "1"; } catch { /* ignore */ }
+      if (collapsed) sec.classList.add("arx-collapsed");           // restore folded-state on load
+      const caret = document.createElement("button");
+      caret.type = "button"; caret.className = "arx-caret"; caret.title = "fold section";
+      caret.textContent = collapsed ? "▸" : "▾";
+      caret.onclick = () => {
+        const c = sec.classList.toggle("arx-collapsed");
+        caret.textContent = c ? "▸" : "▾";
+        try { c ? localStorage.setItem(foldKey(anchor), "1") : localStorage.removeItem(foldKey(anchor)); } catch { /* ignore */ }
+      };
+      h.insertBefore(caret, h.firstChild);
       const b = document.createElement("button"); b.type = "button"; b.className = "anno-cmt"; b.textContent = "✎";
       b.title = "comment on this section";
-      b.onclick = () => openForm(b.getBoundingClientRect(), (txt) => submit({ kind: "section", page, target_id: title, body_md: txt }));
+      b.onclick = () => openForm(b.getBoundingClientRect(), (txt) => submit({ kind: "section", page, target_id: anchor, body_md: txt }));
       h.appendChild(b);
     });
 
