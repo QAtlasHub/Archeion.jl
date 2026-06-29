@@ -43,6 +43,14 @@ export function openDb(path) {
       "anchor TEXT NOT NULL, body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
   db.exec("CREATE INDEX IF NOT EXISTS idx_note_annotations_note ON note_annotations(note_id)");
+  // inline annotations on a RECORD's Pinax page text (descriptive prose, not just figures). page scopes
+  // the anchor to one file of a multi-page doc. Self-migrated so the live DB gains it with no re-ingest.
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS record_annotations (id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+      "record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE, page TEXT NOT NULL DEFAULT '', " +
+      "user_id INTEGER, anchor TEXT NOT NULL, body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_record_annotations_rec ON record_annotations(record_id, page)");
   // app-level accounts (login identity, layered above the shared Basic-auth gate). Created here too so
   // a node-only / freshly-initialized DB has it; declared in schema.sql for ingest-built DBs.
   db.exec(

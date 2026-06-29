@@ -190,6 +190,21 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 CREATE INDEX IF NOT EXISTS idx_comments_record ON comments(record_id);
 
+-- inline annotations on a RECORD's Pinax page text (the descriptive "note" prose, NOT just figures):
+-- select a passage → margin note. `page` scopes the anchor to one page file of a multi-page Pinax doc
+-- (''=single-page/index). anchor is a text-quote (JSON {exact,prefix,suffix}) so it survives re-renders.
+-- App-owned (human-side); re-ingest never touches it.
+CREATE TABLE IF NOT EXISTS record_annotations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_id  TEXT    NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+    page       TEXT    NOT NULL DEFAULT '',   -- which page file (multi-page docs); '' = single-page
+    user_id    INTEGER REFERENCES users(id),
+    anchor     TEXT    NOT NULL,              -- JSON: {exact, prefix, suffix}
+    body_md    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_record_annotations_rec ON record_annotations(record_id, page);
+
 -- ===================== SEARCH (records + figures + comments) =====================
 -- App/ingest-maintained unified FTS. One row per record (title+body_md), per figure (caption),
 -- per comment (body). Search returns matches across all three → present as experiments AND figures.

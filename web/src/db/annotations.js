@@ -60,3 +60,31 @@ export function addComment(db, recordId, userId, bodyMd) {
   db.prepare("UPDATE records SET updated_at = datetime('now') WHERE id = ?").run(recordId);
   return id;
 }
+
+// ── inline annotations on a record's Pinax page text (passage highlight + margin note) ──────────────
+// Parallels the note annotator (db/notes.js) but keyed on a record + its page file. `page` scopes the
+// anchor to one file of a multi-page Pinax doc (''=single-page). Text-quote anchor survives re-renders.
+const _safeParse = (s) => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
+export function addRecordAnnotation(db, recordId, page, userId, anchor, bodyMd) {
+  bodyMd = String(bodyMd || "").trim();
+  if (!bodyMd || !anchor || !anchor.exact) return null;
+  return db
+    .prepare("INSERT INTO record_annotations (record_id, page, user_id, anchor, body_md) VALUES (?,?,?,?,?)")
+    .run(
+      recordId, String(page || ""), userId ?? null,
+      JSON.stringify({ exact: String(anchor.exact), prefix: String(anchor.prefix || ""), suffix: String(anchor.suffix || "") }),
+      bodyMd,
+    ).lastInsertRowid;
+}
+export function recordAnnotations(db, recordId, page = null) {
+  const rows = page === null
+    ? db.prepare("SELECT a.id, a.page, a.user_id, a.anchor, a.body_md, a.created_at, COALESCE(u.name,'anon') AS author FROM record_annotations a LEFT JOIN users u ON u.id = a.user_id WHERE a.record_id = ? ORDER BY a.id").all(recordId)
+    : db.prepare("SELECT a.id, a.page, a.user_id, a.anchor, a.body_md, a.created_at, COALESCE(u.name,'anon') AS author FROM record_annotations a LEFT JOIN users u ON u.id = a.user_id WHERE a.record_id = ? AND a.page = ? ORDER BY a.id").all(recordId, String(page || ""));
+  return rows.map((a) => ({ ...a, anchor: _safeParse(a.anchor) }));
+}
+export function getRecordAnnotation(db, id) {
+  return db.prepare("SELECT id, record_id, user_id FROM record_annotations WHERE id = ?").get(id);
+}
+export function removeRecordAnnotation(db, id) {
+  return db.prepare("DELETE FROM record_annotations WHERE id = ?").run(id).changes;
+}

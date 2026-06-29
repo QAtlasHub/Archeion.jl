@@ -7,6 +7,7 @@ import {
   projectMeta, addProjectTag, removeProjectTag, addTodo, toggleTodo, removeTodo,
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
+  addRecordAnnotation, recordAnnotations, getRecordAnnotation, removeRecordAnnotation,
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
   addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation, relatedNotes, graphData,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
@@ -197,6 +198,21 @@ export function createApp(dbPath) {
         const aid = addNoteAnnotation(db, note.id, uid(), { exact: body.get("exact"), prefix: body.get("prefix"), suffix: body.get("suffix") }, body.get("body_md"));
         if (!aid) return { status: 400, type: "text/plain", body: "bad annotation" };
         const a = noteAnnotations(db, note.id).find((x) => x.id === aid);
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ ...a, body_html: V.mdHtml(a.body_md), can_delete: true }) };
+      }
+      // record annotations: passage notes on a record's Pinax page TEXT (annot.js, on every page file)
+      const ram = path.match(/^\/api\/record\/(.+)\/annotations(\/del)?$/);
+      if (ram) {
+        const recId = decodeURIComponent(ram[1]);
+        if (!getRecord(db, recId)) return { status: 404, type: "text/plain", body: "no record" };
+        if (ram[2]) { // /annotations/del — own annotation, or admin
+          const a = getRecordAnnotation(db, +body.get("aid"));
+          if (a && a.record_id === recId && (a.user_id === me.id || me.role === "admin")) removeRecordAnnotation(db, a.id);
+          return { status: 204, type: "text/plain", body: "" };
+        }
+        const aid = addRecordAnnotation(db, recId, body.get("page") || "", uid(), { exact: body.get("exact"), prefix: body.get("prefix"), suffix: body.get("suffix") }, body.get("body_md"));
+        if (!aid) return { status: 400, type: "text/plain", body: "bad annotation" };
+        const a = recordAnnotations(db, recId).find((x) => x.id === aid);
         return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ ...a, body_html: V.mdHtml(a.body_md), can_delete: true }) };
       }
       if (path === "/bookmark") {
@@ -445,6 +461,20 @@ export function createApp(dbPath) {
       }
     }
     if (path === "/api/graph") return json(graphData(db)); // {nodes,edges} for the /graph canvas
+    {
+      // record annotations (passage highlights on the page TEXT) — annot.js load + live poll. MUST come
+      // before the catch-all /api/record/(.+) below. ?page= scopes to one file of a multi-page doc.
+      const ram = path.match(/^\/api\/record\/(.+)\/annotations$/);
+      if (ram) {
+        const id = decodeURIComponent(ram[1]);
+        if (!getRecord(db, id)) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
+        const list = recordAnnotations(db, id, query.get("page") || "").map((a) => ({
+          id: a.id, author: a.author, created_at: a.created_at, anchor: a.anchor, page: a.page,
+          body_html: V.mdHtml(a.body_md), can_delete: a.user_id === me.id || me.role === "admin",
+        }));
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ annotations: list }) };
+      }
+    }
     {
       // JSON for inject.js (the overlay on a Pinax page): record meta + tags + runs + bookmark + comments
       const m = path.match(/^\/api\/record\/(.+)$/);

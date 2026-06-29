@@ -76,7 +76,7 @@ const app = createApp(DB);
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    if (req.method === "GET" && ["/style.css", "/app.js", "/inject.js", "/inject.css", "/compose-editor.js"].includes(url.pathname)) {
+    if (req.method === "GET" && ["/style.css", "/app.js", "/inject.js", "/inject.css", "/compose-editor.js", "/annot.js", "/graph.js"].includes(url.pathname)) {
       return serveStatic(res, PUBLIC, url.pathname.slice(1));
     }
     if (req.method === "GET" && url.pathname.startsWith("/katex/")) { // self-hosted KaTeX css + fonts

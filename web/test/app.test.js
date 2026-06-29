@@ -550,6 +550,32 @@ test("annotations: structure-note only — add (anchored) / list / delete; non-p
   assert.equal(anno(pid, { exact: "y", body_md: "no" }).status, 403);
 });
 
+test("annotations: record page TEXT — add (anchored, page-scoped) / list / delete", () => {
+  const app = setup();
+  const rec = "p/r1"; // seeded record
+  const anno = (form, sfx = "") => app("POST", "/api/record/" + rec + "/annotations" + sfx, new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams(form),
+  });
+  // annotate a passage of the descriptive prose on a specific page file
+  const r = anno({ page: "eq_overview.html", exact: "volume law", prefix: "the ", suffix: " entropy", body_md: "which **cut**?" });
+  assert.equal(r.status, 200);
+  const a = JSON.parse(r.body);
+  assert.ok(a.id); assert.equal(a.anchor.exact, "volume law"); assert.equal(a.page, "eq_overview.html");
+  assert.match(a.body_html, /which/); assert.ok(a.can_delete);
+  // list is scoped to that page (query via the q param — the server reads url.searchParams)
+  const onPage = JSON.parse(get(app, "/api/record/" + rec + "/annotations", { page: "eq_overview.html" }).body).annotations;
+  assert.equal(onPage.length, 1); assert.equal(onPage[0].id, a.id);
+  // a DIFFERENT page sees none (page scoping)
+  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { page: "gq_dqt.html" }).body).annotations.length, 0);
+  // delete (own/admin)
+  assert.equal(post(app, "/api/record/" + rec + "/annotations/del", { aid: a.id }).status, 204);
+  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { page: "eq_overview.html" }).body).annotations.length, 0);
+  // unknown record → 404
+  assert.equal(app("POST", "/api/record/p/nope/annotations", new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams({ exact: "x", body_md: "y" }),
+  }).status, 404);
+});
+
 test("notes: note→note + project mentions (graph edges) — links out + backlinks on /note/:id", () => {
   const app = setup();
   const a = post(app, "/noteadd", { title: "Alpha", body: "root", pinned: "1", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
