@@ -209,6 +209,136 @@ function feedback_md(db, rid)
 end
 
 """
+    status(db; io=stdout, print=true) -> NamedTuple
+    status(; config=nothing, io=stdout, print=true) -> NamedTuple   # config=nothing → the host's agent; else pull `config`
+
+A one-call overview of the whole registry — so the current state is *queried*, not hand-inspected
+with raw SQLite. Returns `(; projects, records, figures, comments, items)` where `items` is one
+`(; project, para, id, title, importance, archived, figures, runs, comments, updated_at)` per record
+(grouped by PARA bucket then project). With `print=true` it also writes a grouped table to `io`.
+
+`status(db)` reads a local DB (a path or an open `SQLite.DB`). `status(; config=...)` fetches the
+deployed DB via `pull` (see transport.jl) and summarizes the LIVE registry in one call.
+"""
+function status(db; io::IO=stdout, print::Bool=true)
+    _withdb(db) do conn
+        has_comments = _has_table(conn, "comments")
+        has_runs = _has_table(conn, "record_runs")
+        has_notes = _has_table(conn, "notes")
+        items = NamedTuple[]
+        for r in DBInterface.execute(
+            conn,
+            """
+            SELECT r.project AS project, COALESCE(p.para,'?') AS para, r.id AS id, r.title AS title,
+                   r.importance AS importance, r.archived AS archived, COALESCE(r.updated_at,'') AS updated_at
+            FROM records r LEFT JOIN projects p ON p.name = r.project
+            ORDER BY p.para, r.project, r.id
+            """,
+        )
+            # scalars must be read INSIDE the loop (a SQLite.Row is valid only during iteration)
+            rid = String(r.id)
+            push!(
+                items,
+                (;
+                    project=String(r.project),
+                    para=String(r.para),
+                    id=rid,
+                    title=String(r.title),
+                    importance=Int(r.importance),
+                    archived=r.archived != 0,
+                    figures=_count1(
+                        conn, "SELECT COUNT(*) c FROM figures WHERE record_id=?", rid
+                    ),
+                    runs=if has_runs
+                        _count1(
+                            conn,
+                            "SELECT COUNT(*) c FROM record_runs WHERE record_id=?",
+                            rid,
+                        )
+                    else
+                        0
+                    end,
+                    comments=if has_comments
+                        _count1(
+                            conn, "SELECT COUNT(*) c FROM comments WHERE record_id=?", rid
+                        )
+                    else
+                        0
+                    end,
+                    updated_at=String(r.updated_at),
+                ),
+            )
+        end
+        nproj = length(unique(it.project for it in items))
+        nfig = _count1(conn, "SELECT COUNT(*) c FROM figures")
+        ncom = has_comments ? _count1(conn, "SELECT COUNT(*) c FROM comments") : 0
+        summary = (;
+            projects=nproj,
+            records=length(items),
+            figures=nfig,
+            comments=ncom,
+            notes=has_notes ? _count1(conn, "SELECT COUNT(*) c FROM notes") : 0,
+            items=items,
+        )
+        print && _print_status(io, summary)
+        return summary
+    end
+end
+
+function status(; config=nothing, io::IO=stdout, print::Bool=true)
+    tmp = joinpath(tempdir(), "archeion-status.db")
+    # config===nothing → the host's initialized agent (no creds in the caller); else the explicit config.
+    db = config === nothing ? pull(; dest=tmp) : pull(config; out=tmp)
+    return status(db; io=io, print=print)
+end
+
+_count1(conn, sql, args...) = Int(first(DBInterface.execute(conn, sql, args)).c)
+
+function _print_status(io::IO, s)
+    println(
+        io,
+        "registry: ",
+        s.records,
+        " records · ",
+        s.projects,
+        " projects · ",
+        s.figures,
+        " figures · ",
+        s.comments,
+        " comments · ",
+        s.notes,
+        " notes",
+    )
+    para = ""
+    proj = ""
+    for it in s.items
+        if it.para != para
+            para = it.para
+            println(io, "\n▸ ", para)
+            proj = ""
+        end
+        if it.project != proj
+            proj = it.project
+            println(io, "  ", proj)
+        end
+        flags = string("★"^it.importance, it.archived ? " 🗄" : "")
+        println(
+            io,
+            "    - ",
+            it.id,
+            "  (",
+            it.figures,
+            " figs",
+            it.runs > 0 ? ", $(it.runs) runs" : "",
+            it.comments > 0 ? ", $(it.comments) comments" : "",
+            ")",
+            isempty(flags) ? "" : "  " * flags,
+        )
+    end
+    return nothing
+end
+
+"""
     record_versions(db, rid) -> Vector{@NamedTuple{version::Int, title::String, ingested_at::String, git_commit::String, date::String}}
 
 The content version history of a record (oldest-first) — one entry per distinct content state (ingest

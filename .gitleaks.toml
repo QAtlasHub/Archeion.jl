@@ -7,7 +7,9 @@ title = "Archeion"
 useDefault = true
 
 [allowlist]
-description = "test fixtures — fake passwords used to drive the auth tests"
+description = "test fixtures + example templates — fake/placeholder passwords, not real secrets"
 paths = [
   '''web/test/.*\.test\.js''',
+  '''test/.*\.jl''',          # Julia test fixtures (e.g. test_agent.jl drives crypto with throwaway passwords)
+  '''.*\.example\.toml''',    # config templates with placeholder creds (archeion.example.toml / deploy.example.toml)
 ]
