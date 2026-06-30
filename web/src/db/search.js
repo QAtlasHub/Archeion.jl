@@ -30,7 +30,7 @@ export function search(db, q, { limit = 80, project = null, fields = FIELD_VALUE
   const tagByRec = {}, cmtByRec = {}, capByRec = {};
   for (const r of db.prepare("SELECT rt.record_id AS id, t.name FROM record_tags rt JOIN tags t ON t.id = rt.tag_id").all())
     (tagByRec[r.id] ||= []).push(r.name);
-  for (const c of db.prepare("SELECT record_id AS id, body_md FROM comments").all())
+  for (const c of db.prepare("SELECT record_id AS id, body_md FROM annotations").all())
     (cmtByRec[c.id] ||= []).push(c.body_md);
   for (const f of db.prepare("SELECT record_id AS id, caption FROM figures").all())
     (capByRec[f.id] ||= []).push(f.caption);
@@ -81,7 +81,7 @@ export function searchProjects(db, q, { limit = 80, fields = FIELD_VALUES } = {}
       F.has("date") && add(r.project, r.date);
     }
   if (F.has("comment"))
-    for (const c of db.prepare("SELECT r.project, c.body_md FROM comments c JOIN records r ON r.id = c.record_id").all())
+    for (const c of db.prepare("SELECT r.project, c.body_md FROM annotations c JOIN records r ON r.id = c.record_id").all())
       add(c.project, c.body_md);
   if (F.has("tag"))
     for (const r of db.prepare("SELECT pt.project, t.name FROM project_tags pt JOIN tags t ON t.id = pt.tag_id").all())

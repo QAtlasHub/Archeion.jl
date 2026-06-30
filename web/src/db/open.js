@@ -43,6 +43,17 @@ export function openDb(path) {
       "anchor TEXT NOT NULL, body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
   );
   db.exec("CREATE INDEX IF NOT EXISTS idx_note_annotations_note ON note_annotations(note_id)");
+  // UNIFIED comments+annotations on a record, each carrying its LOCATION (target_kind/page/target_id/
+  // anchor) — record discussion + figure/section/passage notes in one table, all server-side. Supersedes
+  // `comments` + `record_annotations`. Self-migrated so the live DB gains it with no re-ingest.
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS annotations (id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+      "record_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE, " +
+      "target_kind TEXT NOT NULL DEFAULT 'record', page TEXT NOT NULL DEFAULT '', " +
+      "target_id TEXT NOT NULL DEFAULT '', anchor TEXT NOT NULL DEFAULT '', " +
+      "user_id INTEGER, body_md TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_annotations_loc ON annotations(record_id, target_kind, page, target_id)");
   // app-level accounts (login identity, layered above the shared Basic-auth gate). Created here too so
   // a node-only / freshly-initialized DB has it; declared in schema.sql for ingest-built DBs.
   db.exec(

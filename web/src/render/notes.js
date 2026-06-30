@@ -2,7 +2,7 @@
 // advisor /show page (presentLayout), and the /note open view + comments. Split out of pages.js and
 // re-exported via render.js, so app.js (`import * as V`) is unaffected. body_md → HTML via util.md;
 // ![[embeds]] / [[mentions]] are resolved in the db layer, rendered here.
-import { esc, rid, stars, md, figUrl } from "./util.js";
+import { esc, rid, stars, md, figUrl, figMedia, figHref } from "./util.js";
 import { impSelect } from "./components.js";
 import { layout, presentLayout, composeShell } from "./layout.js";
 
@@ -14,9 +14,9 @@ import { layout, presentLayout, composeShell } from "./layout.js";
 function embedHtml(e, i) {
   if (e.kind === "figure") {
     const f = e.figure;
-    const suffix = e.target.slice(e.target.indexOf(":") + 1); // = string(f.id) = the page's <img alt>
-    return `<a class="embed-figl" href="/r/${rid(e.record)}#arxfig=${encodeURIComponent(suffix)}" target="_blank" rel="noopener" title="open centered on this figure">` +
-      `<figure class="embed-fig"><img loading="lazy" src="${esc(figUrl(f.thumbnail || f.path))}" alt="${esc(f.caption)}">` +
+    const suffix = e.target.slice(e.target.indexOf(":") + 1); // = string(f.id) = the page's <img alt>/<iframe title>
+    return `<a class="embed-figl" href="${figHref(e.record, suffix)}" target="_blank" rel="noopener" title="open centered on this figure">` +
+      `<figure class="embed-fig">${figMedia(f.thumbnail || f.path, f.caption)}` +
       `<figcaption>${esc(f.caption)} <span class="embed-open">↗</span></figcaption></figure></a>`;
   }
   if (e.kind === "section") {

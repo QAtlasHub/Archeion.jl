@@ -106,16 +106,38 @@ function _store_pages(src_dir, rid, content_dir)
     cp(src_dir, destdir)
     idx = joinpath(destdir, "index.html")
     isfile(idx) || return ""
-    # inject the Archeion overlay (inject.js): metaproperty panel + discussion + section folding,
-    # added to the run's own Pinax page (no iframe). It reads the record id from window.ARCHEION_RECORD.
-    inj = string(
-        "<link rel=\"stylesheet\" href=\"/inject.css\">",
-        "<script>window.ARCHEION_RECORD=",
-        repr(rid),
-        ";</script>",
-        "<script src=\"/inject.js\"></script>",
-    )
-    write(idx, replace(read(idx, String), "</body>" => inj * "</body>"; count=1))
+    # Inject Archeion's client scripts into EVERY page file (a multi-page Pinax doc is many .html files):
+    #  • every page gets `window.ARCHEION_RECORD`/`ARCHEION_PAGE` + annot.js — the passage-level text
+    #    annotator so a reader can comment on the DESCRIPTIVE prose (section intent/method/analysis), not
+    #    just figures. `ARCHEION_PAGE` scopes each annotation to its page file.
+    #  • index.html ALSO gets the full overlay (inject.js): metaproperty panel + discussion + folding.
+    recq = repr(rid)
+    for (rootd, _, files) in walkdir(destdir)
+        for f in files
+            endswith(f, ".html") || continue
+            fp = joinpath(rootd, f)
+            rel = relpath(fp, destdir)
+            head = string(
+                "<script>window.ARCHEION_RECORD=",
+                recq,
+                ";window.ARCHEION_PAGE=",
+                repr(rel),
+                ";</script>",
+            )
+            inj = if rel == "index.html"
+                string(
+                    "<link rel=\"stylesheet\" href=\"/inject.css\">",
+                    head,
+                    "<script src=\"/inject.js\"></script><script src=\"/annot.js\"></script>",
+                )
+            else
+                string(head, "<script src=\"/annot.js\"></script>")
+            end
+            html = read(fp, String)
+            occursin("</body>", html) || continue
+            write(fp, replace(html, "</body>" => inj * "</body>"; count=1))
+        end
+    end
     return joinpath("pages", safe, "index.html")
 end
 

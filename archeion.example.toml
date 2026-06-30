@@ -13,3 +13,47 @@ content_dir = "data"                      # where ingest stores the rendered pag
 category    = "Demonstration/Examples"    # PARA category, used by the web app to organize records
 tags        = ["example"]                 # default tags applied to this project's records
 deploy      = "deploy.local.toml"         # FTP target config (gitignored; secret via ARCHEION_FTP_PASSWORD)
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────────
+# STRONGER ALTERNATIVE — the encrypted-config + agent model (the secret is unreadable to automation).
+#
+# Instead of a gitignored deploy.local.toml + env secret, ENCRYPT the whole deploy config and serve it
+# from an in-memory agent. A human unlocks it once per host (interactive REPL); thereafter the LLM (or
+# any non-interactive session) can `deploy()`/`pull()`/`status()`/`publish()` through the agent WITHOUT
+# the password and WITHOUT being able to read the creds/target. Build the file below, then:
+#
+#   # one-time, in a REPL (human at a terminal):
+#   using Archeion; Archeion.lock_config("archeion.toml"; out="config.enc", shred=true)   # prompts for a password
+#
+#   # per host, in a DEDICATED tmux pane (the agent holds the creds in memory + serves a 0600 socket):
+#   julia --project=Archeion.jl -e 'using Archeion; Archeion.initialize("config.enc")'    # prompts; then blocks/serves
+#
+#   # thereafter, in ANY session on that host — no config, no password (delegated to the agent):
+#   Archeion.status()                                  # pull live registry via the agent + summarize
+#   Archeion.publish(; doc=rep.doc, source="phase1")   # pull → ingest (annotation-safe) → push
+#   Archeion.deploy()                                  # push the active content tree
+#
+# The file to encrypt (becomes config.enc — keep it out of git; without the password it reveals nothing):
+#
+#   [study]
+#   project_name = "myproject"
+#
+#   [archeion]
+#   content_dir = "/home/me/.archeion/sites/myproject"   # LOCAL mirror of the docroot (ingest writes here)
+#   out         = "/home/me/myproject/out/report"        # where Pinax render wrote (publish html_dir default)
+#
+#   [archeion.remote]                                    # the default deploy target — SECRET (agent-only)
+#   kind    = "ftps"                                     # "ftps" (Lolipop) | "local" (mirror to a dir)
+#   db_path = "data/archeion.db"                         # the registry DB under the remote docroot
+#
+#   [archeion.hosts.panza]                               # per-HOST dispatch: same config, target by gethostname()
+#   kind = "ftps"
+#   [archeion.hosts.laptop]
+#   kind = "local"
+#   path = "/home/me/archeion-mirror"
+#
+#   [ftp]                                                # FTPS creds — SECRET (only in config.enc + agent memory)
+#   host = "ftp.lolipop.jp"
+#   user = "your-ftp-user"
+#   password = "your-ftp-password"
+#   remote_dir = "/lab.sota-shimozono.com"

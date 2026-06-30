@@ -5,7 +5,8 @@
 // straight into context. projectContext → JSON; contextMarkdown → a single ingestible md pack.
 // Aligns in spirit with Pinax's agent.json (data, not pixels; status-aware).
 import { projectMeta } from "./projects.js";
-import { recordTags, recordRuns, recordComments } from "./records.js";
+import { recordTags, recordRuns } from "./records.js";
+import { recordComments } from "./annotations.js"; // record discussion = annotations(kind='record')
 import { notesForDisplay, parseMentions, resolveMentions } from "./notes.js";
 
 // Related PAST experiments elsewhere in the registry — the LLM's "have we done something like this?"

@@ -1,6 +1,6 @@
 // The pages: one exported render<X>() per view. Each builds a <main> body from components and wraps
 // it in layout(). body_md → HTML via markdown-it (util.md); everything else is escaped.
-import { esc, rid, snipHtml, figUrl, md } from "./util.js";
+import { esc, rid, snipHtml, figUrl, figMedia, md } from "./util.js";
 import { recordCard, figureCard, bookmarkForm, tagEditor, sortControl, impSelect } from "./components.js";
 import { PARA } from "../constants.js";
 import { layout } from "./layout.js";
@@ -37,7 +37,7 @@ export function renderRecord(rec, { figures, runs, comments, tags, bset, user, p
   const figs = figures
     .map(
       (f) => `<figure class="figcard">
-        <img loading="lazy" src="${esc(figUrl(f.thumbnail || f.path))}" alt="${esc(f.caption)}">
+        ${figMedia(f.thumbnail || f.path, f.caption)}
         <figcaption>${esc(f.caption)}
           <form method="post" action="/figimportance" class="imp-set admin-only"><input type="hidden" name="id" value="${esc(f.id)}">
             ${impSelect("value", f.importance)}<button>set</button></form>

@@ -46,8 +46,14 @@ using DBInterface
     DBInterface.execute(conn, "INSERT INTO users (name) VALUES ('alice')")
     DBInterface.execute(
         conn,
-        "INSERT INTO comments (record_id, user_id, body_md) SELECT ?, id, 'looks converged' FROM users WHERE name='alice'",
+        "INSERT INTO annotations (record_id, target_kind, user_id, body_md) SELECT ?, 'record', id, 'looks converged' FROM users WHERE name='alice'",
         (rid,),
+    )
+    # a figure-anchored comment too → record_annotation_list should surface it with its location
+    DBInterface.execute(
+        conn,
+        "INSERT INTO annotations (record_id, target_kind, page, target_id, user_id, body_md) SELECT ?, 'figure', 'eq.html', ?, id, 'noisy' FROM users WHERE name='alice'",
+        (rid, rid * ":fig1"),
     )
     DBInterface.execute(
         conn,
@@ -79,7 +85,12 @@ using DBInterface
     @test a.importance == 2
     @test a.archived == true
     @test a.tags == ["mps", "tpq"]
-    @test length(a.comments) == 1
+    @test length(a.comments) == 1                    # record-level discussion (back-compat field)
+    # the unified location-tagged list: record discussion + the figure-anchored comment
+    @test length(a.annotations) == 2
+    fig = only(filter(x -> x.kind == "figure", a.annotations))
+    @test fig.target == rid * ":fig1" && fig.page == "eq.html" && fig.body_md == "noisy"
+    @test Archeion.record_annotation_list(db, rid) == a.annotations
 
     p = Archeion.project_annotations(db, proj)
     @test p.exists
@@ -95,6 +106,8 @@ using DBInterface
     @test occursin("archived", md)
     @test occursin("#mps", md)
     @test occursin("alice", md)
+    @test occursin("Annotations (by location)", md)   # the figure comment, tagged with where it points
+    @test occursin("figure `" * rid * ":fig1`", md)
     @test occursin("converged", md)
     @test occursin("thermal study", md)   # project description folded in
 
@@ -187,7 +200,7 @@ end
     DBInterface.execute(conn, "INSERT INTO users (name) VALUES ('bob')")
     DBInterface.execute(
         conn,
-        "INSERT INTO comments (record_id, user_id, body_md) SELECT ?, id, 'good run' FROM users WHERE name='bob'",
+        "INSERT INTO annotations (record_id, target_kind, user_id, body_md) SELECT ?, 'record', id, 'good run' FROM users WHERE name='bob'",
         (rid,),
     )
     DBInterface.execute(conn, "UPDATE projects SET description='my proj' WHERE name='proj'")

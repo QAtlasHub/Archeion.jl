@@ -269,6 +269,25 @@ test("composer: /api/note/preview renders ![[figure]] embeds + [[mention]] links
   assert.match(r.body, /href="\/r\/p\/r1"/); // mention linked
 });
 
+test("composer: body_b64 (content-WAF bypass) decodes server-side for both preview AND save", () => {
+  const app = setup();
+  const src = "result ![[p/r1:mag]] see [[p/r1]] with $x_1$"; // the markdown a content WAF would 403 on
+  const b64 = Buffer.from(src, "utf8").toString("base64");
+  // preview: only body_b64 reaches the server (plaintext body blanked) → still renders the real content
+  const pv = app("POST", "/api/note/preview", new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
+    body: new URLSearchParams({ body: "", body_b64: b64 }),
+  });
+  assert.equal(pv.status, 200);
+  assert.match(pv.body, /\/figures\/mag\.svg/); // decoded embed transcluded
+  assert.match(pv.body, /class="katex"/); // decoded math rendered
+  // save: the STORED note holds the decoded markdown (so /show renders identically)
+  const sv = post(app, "/noteadd", { scope: "proj", title: "B64", body: "", body_b64: b64, from: "compose" });
+  assert.equal(sv.status, 303);
+  const id = sv.headers.Location.match(/id=(\d+)/)[1];
+  assert.match(get(app, "/show/" + id).body, /\/figures\/mag\.svg/); // decoded + persisted
+});
+
 test("composer preview: a full page of the CURRENT edits, chrome-free (no header → no duplicate)", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
@@ -548,6 +567,41 @@ test("annotations: structure-note only — add (anchored) / list / delete; non-p
   // a NON-pinned note refuses annotations (structure notes only)
   const pid = post(app, "/noteadd", { title: "plain", body: "y", from: "compose" }).headers.Location.match(/id=(\d+)/)[1];
   assert.equal(anno(pid, { exact: "y", body_md: "no" }).status, 403);
+});
+
+test("annotations: unified record/figure/section/passage — each carries its location; list + delete", () => {
+  const app = setup();
+  const rec = "p/r1"; // seeded record
+  const anno = (form, sfx = "") => app("POST", "/api/record/" + rec + "/annotations" + sfx, new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams(form),
+  });
+  // a PASSAGE on a page (text-quote anchored)
+  const p = JSON.parse(anno({ kind: "passage", page: "eq_overview.html", exact: "volume law", prefix: "the ", suffix: " entropy", body_md: "which **cut**?" }).body);
+  assert.equal(p.target_kind, "passage"); assert.equal(p.page, "eq_overview.html"); assert.equal(p.anchor.exact, "volume law");
+  assert.match(p.body_html, /which/); assert.ok(p.can_delete);
+  // a FIGURE comment (figures can't be text-selected → its stable id is the location)
+  const f = JSON.parse(anno({ kind: "figure", page: "eq_overview.html", target_id: "p/r1:mag", body_md: "noisy near Tc" }).body);
+  assert.equal(f.target_kind, "figure"); assert.equal(f.target_id, "p/r1:mag");
+  // a SECTION comment
+  const s = JSON.parse(anno({ kind: "section", page: "eq_overview.html", target_id: "Thermodynamics", body_md: "expand this" }).body);
+  assert.equal(s.target_kind, "section"); assert.equal(s.target_id, "Thermodynamics");
+  // the page's list returns all three, each with its location
+  const onPage = JSON.parse(get(app, "/api/record/" + rec + "/annotations", { page: "eq_overview.html" }).body).annotations;
+  assert.equal(onPage.length, 3);
+  assert.deepEqual(new Set(onPage.map((x) => x.target_kind)), new Set(["passage", "figure", "section"]));
+  // filter by kind
+  const figs = JSON.parse(get(app, "/api/record/" + rec + "/annotations", { kind: "figure" }).body).annotations;
+  assert.equal(figs.length, 1); assert.equal(figs[0].target_id, "p/r1:mag");
+  // record-level discussion lands in the same table (kind=record) via /r/:id/comment
+  assert.equal(post(app, "/r/p/r1/comment", { body_md: "overall LGTM" }).status, 303);
+  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { kind: "record" }).body).annotations.length, 1);
+  // delete one (own/admin)
+  assert.equal(post(app, "/api/record/" + rec + "/annotations/del", { aid: f.id }).status, 204);
+  assert.equal(JSON.parse(get(app, "/api/record/" + rec + "/annotations", { kind: "figure" }).body).annotations.length, 0);
+  // unknown record → 404
+  assert.equal(app("POST", "/api/record/p/nope/annotations", new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" }, body: new URLSearchParams({ kind: "record", body_md: "y" }),
+  }).status, 404);
 });
 
 test("notes: note→note + project mentions (graph edges) — links out + backlinks on /note/:id", () => {

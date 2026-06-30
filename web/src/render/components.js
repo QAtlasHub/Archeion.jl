@@ -1,7 +1,7 @@
 // Reusable view fragments: the record/figure cards, the inline forms (bookmark, tag editor, sort,
 // importance select), and the search-field selector. Each returns an HTML string. Data is escaped;
 // only markdown bodies (rendered elsewhere) carry HTML.
-import { esc, rid, stars, figUrl, isBk } from "./util.js";
+import { esc, rid, stars, figUrl, figMedia, figHref, isBk } from "./util.js";
 import { SEARCH_FIELDS } from "../constants.js";
 
 // importance picker (0..3 stars) — shared by the record control + per-figure annotation
@@ -39,7 +39,7 @@ export function tagEditor(recId, tags) {
 export function recordCard(r, bset) {
   const tags = (r.tags || []).map((t) => `<a class="tag" href="/?tag=${encodeURIComponent(t)}">#${esc(t)}</a>`).join(" ");
   const thumb = r.thumb
-    ? `<a class="cardthumb" href="/r/${rid(r.id)}"><img loading="lazy" src="${esc(figUrl(r.thumb))}" alt=""></a>`
+    ? `<a class="cardthumb" href="/r/${rid(r.id)}">${figMedia(r.thumb, "")}</a>`
     : "";
   return `<div class="card${r.archived ? " arch" : ""}">
     ${thumb}
@@ -51,8 +51,9 @@ export function recordCard(r, bset) {
 }
 
 export function figureCard(f, bset, extraCls = "") {
+  const suffix = String(f.id).slice(String(f.record_id).length + 1); // "<record>:<suffix>" → suffix
   return `<figure class="figcard${extraCls ? " " + extraCls : ""}">
-    <a href="/r/${rid(f.record_id)}"><img loading="lazy" src="${esc(figUrl(f.thumbnail || f.path))}" alt="${esc(f.caption)}"></a>
+    <a href="${figHref(f.record_id, suffix)}">${figMedia(f.thumbnail || f.path, f.caption)}</a>
     <figcaption>${esc(f.caption)}
       <span class="imp">${stars(f.importance || 0)}</span>
       <a class="rt" href="/r/${rid(f.record_id)}">${esc(f.record_title || f.record_id)}</a>

@@ -74,17 +74,10 @@ export function recordTags(db, recordId) {
     .all(recordId)
     .map((r) => r.name);
 }
-export function recordComments(db, recordId) {
-  return db
-    .prepare(
-      `SELECT c.id, c.body_md, c.created_at, COALESCE(u.name,'anon') AS author
-       FROM comments c LEFT JOIN users u ON u.id = c.user_id
-       WHERE c.record_id = ? ORDER BY c.id`,
-    )
-    .all(recordId);
-}
+// (recordComments lives in db/annotations.js now — the record discussion is target_kind='record'
+//  rows of the unified `annotations` table.)
 
-// recent activity (replaces per-user unread/read-later): newest records + newest comments
+// recent activity (replaces per-user unread/read-later): newest records + newest record-discussion notes
 export function recentActivity(db, { limit = 30 } = {}) {
   const records = db
     .prepare(`SELECT ${REC} FROM records r WHERE r.archived = 0 ORDER BY r.updated_at DESC LIMIT ?`)
@@ -93,8 +86,8 @@ export function recentActivity(db, { limit = 30 } = {}) {
     .prepare(
       `SELECT c.record_id, c.body_md, c.created_at, COALESCE(u.name,'anon') AS author,
               r.title AS record_title, r.project
-       FROM comments c JOIN records r ON r.id = c.record_id LEFT JOIN users u ON u.id = c.user_id
-       WHERE r.archived = 0 ORDER BY c.id DESC LIMIT ?`,
+       FROM annotations c JOIN records r ON r.id = c.record_id LEFT JOIN users u ON u.id = c.user_id
+       WHERE c.target_kind = 'record' AND r.archived = 0 ORDER BY c.id DESC LIMIT ?`,
     )
     .all(limit);
   return { records, comments };

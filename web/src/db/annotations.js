@@ -50,13 +50,50 @@ export function userBookmarks(db, userId) {
   return { records, figures };
 }
 
-export function addComment(db, recordId, userId, bodyMd) {
+// ── unified comments + annotations: every one carries its LOCATION ──────────────────────────────────
+// One table (`annotations`) holds the record discussion + figure/section/passage notes; the location is
+// (target_kind, page, target_id, anchor). All server-side (no localStorage "unsaved"); searchable; the
+// comment list + where each points is traceable from this one table.
+const _safeParse = (s) => { try { return JSON.parse(s || "{}"); } catch { return {}; } };
+
+export function addAnnotation(db, recordId, { kind = "record", page = "", targetId = "", anchor = null } = {}, userId, bodyMd) {
+  bodyMd = String(bodyMd || "").trim();
+  if (!bodyMd) return null;
+  if (kind === "passage" && !(anchor && anchor.exact)) return null; // a passage must carry a text anchor
+  const anchorJson = anchor
+    ? JSON.stringify({ exact: String(anchor.exact || ""), prefix: String(anchor.prefix || ""), suffix: String(anchor.suffix || "") })
+    : "";
   const id = db
-    .prepare("INSERT INTO comments (record_id, user_id, body_md) VALUES (?,?,?)")
-    .run(recordId, userId, bodyMd).lastInsertRowid;
-  db.prepare("INSERT INTO search_fts (text, kind, id, record_id) VALUES (?,?,?,?)").run(
-    bodyMd, "comment", String(id), recordId,
-  );
+    .prepare("INSERT INTO annotations (record_id, target_kind, page, target_id, anchor, user_id, body_md) VALUES (?,?,?,?,?,?,?)")
+    .run(recordId, kind, String(page || ""), String(targetId || ""), anchorJson, userId ?? null, bodyMd).lastInsertRowid;
+  db.prepare("INSERT INTO search_fts (text, kind, id, record_id) VALUES (?,?,?,?)").run(bodyMd, "comment", String(id), recordId);
   db.prepare("UPDATE records SET updated_at = datetime('now') WHERE id = ?").run(recordId);
   return id;
+}
+
+// list a record's annotations, optionally filtered by kind and/or page; anchor parsed back to an object
+export function recordAnnotations(db, recordId, { kind = null, page = null } = {}) {
+  let sql =
+    "SELECT a.id, a.target_kind, a.page, a.target_id, a.anchor, a.user_id, a.body_md, a.created_at, " +
+    "COALESCE(u.name,'anon') AS author FROM annotations a LEFT JOIN users u ON u.id = a.user_id WHERE a.record_id = ?";
+  const args = [recordId];
+  if (kind !== null) { sql += " AND a.target_kind = ?"; args.push(kind); }
+  if (page !== null) { sql += " AND a.page = ?"; args.push(String(page)); }
+  sql += " ORDER BY a.id";
+  return db.prepare(sql).all(...args).map((a) => ({ ...a, anchor: a.anchor ? _safeParse(a.anchor) : null }));
+}
+export function getAnnotation(db, id) {
+  return db.prepare("SELECT id, record_id, target_kind, user_id FROM annotations WHERE id = ?").get(id);
+}
+export function removeAnnotation(db, id) {
+  db.prepare("DELETE FROM search_fts WHERE kind='comment' AND id = ?").run(String(id));
+  return db.prepare("DELETE FROM annotations WHERE id = ?").run(id).changes;
+}
+
+// compat wrappers for the record-level Discussion (callers unchanged; now backed by `annotations`)
+export function addComment(db, recordId, userId, bodyMd) {
+  return addAnnotation(db, recordId, { kind: "record" }, userId, bodyMd);
+}
+export function recordComments(db, recordId) {
+  return recordAnnotations(db, recordId, { kind: "record" });
 }

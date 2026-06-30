@@ -50,7 +50,68 @@ function push_dir(t::FTPSTransport, dir::AbstractString; delete::Bool=true)
     return (_run_lftp(_lftp_script(t.target, dir; delete=delete)); true)
 end
 
+# ===================== Local backend (a non-remote host + tests) =====================
+"A backend that mirrors to/from a local directory (`root`). Used when a host's deploy target is local
+(hostname dispatch) and as a credential-free transport in tests."
+struct LocalTransport <: RemoteTransport
+    root::String
+end
+function pull_file(t::LocalTransport, rel::AbstractString, dest::AbstractString)
+    src = startswith(rel, "/") ? String(rel) : joinpath(t.root, rel)
+    isfile(src) || error("pull_file(local): not found: $(src)")
+    mkpath(dirname(abspath(dest)))
+    cp(src, dest; force=true)
+    return dest
+end
+function push_dir(t::LocalTransport, dir::AbstractString; delete::Bool=true)
+    mkpath(t.root)
+    if delete
+        # mirror exactly: drop local-root files not present in `dir`
+        keep = Set(relpath(joinpath(r, f), dir) for (r, _, fs) in walkdir(dir) for f in fs)
+        for (r, _, fs) in walkdir(t.root), f in fs
+            rel = relpath(joinpath(r, f), t.root)
+            rel in keep || rm(joinpath(t.root, rel); force=true)
+        end
+    end
+    for (r, _, fs) in walkdir(dir), f in fs
+        s = joinpath(r, f)
+        d = joinpath(t.root, relpath(s, dir))
+        mkpath(dirname(d))
+        cp(s, d; force=true)
+    end
+    return true
+end
+
 # ===================== config resolution (kind-dispatched) =====================
+
+# Build a transport from an already-parsed config Dict (the agent holds the decrypted config in memory,
+# not a path). Hostname dispatch: a per-host table [archeion.hosts.<hostname>] overrides `kind`/`path`;
+# else the flat [archeion.remote] / [ftp]. This is how `initialize` on panza → Lolipop, on another host
+# → a local dir, from the SAME config — the host is read at deploy time.
+function _transport_from(cfg::AbstractDict)
+    arche = get(cfg, "archeion", Dict{String,Any}())
+    rem = get(arche, "remote", Dict{String,Any}())
+    host = gethostname()
+    hostcfg = get(get(arche, "hosts", Dict{String,Any}()), host, Dict{String,Any}())
+    hostcfg isa AbstractDict || (hostcfg = Dict{String,Any}())
+    kind = lowercase(string(get(hostcfg, "kind", get(rem, "kind", "ftps"))))
+    if kind == "local"
+        return LocalTransport(string(get(hostcfg, "path", get(rem, "path", ""))))
+    elseif kind in ("ftps", "ftp")
+        f = get(cfg, "ftp", Dict{String,Any}())
+        return FTPSTransport(
+            DeployTarget(
+                string(f["host"]),
+                string(f["user"]),
+                string(get(f, "password", "")),
+                string(get(f, "remote_dir", "/")),
+                get(f, "tls", true),
+                get(f, "tls_verify", true),
+            ),
+        )
+    end
+    return error("_transport_from: unknown remote kind '$(kind)'")
+end
 """
     transport(config) -> RemoteTransport
 

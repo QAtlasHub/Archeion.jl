@@ -305,6 +305,8 @@ mark.anno.anno-flash { background: #ffd43b; }
 .cm-embed-figure { display: inline-flex; flex-direction: column; max-width: 360px; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--card); margin: .15rem 0; }
 .cm-embed-figure:hover { border-color: var(--accent); }
 .cm-embed-figure img { max-width: 100%; max-height: 240px; object-fit: contain; background: #fafafa; display: block; }
+/* PDF figure embed in the editor → a compact chip (no broken <img>); the preview pane renders the figure. */
+.cm-embed-figure.cm-embed-figchip { flex-direction: row; align-items: center; gap: .4rem; max-width: 100%; padding: .25rem .55rem; border-radius: 8px; }
 .cm-embed-cap { font-size: .72rem; color: var(--muted); padding: .2rem .45rem; }
 .cm-embed-section, .cm-embed-record { display: inline-flex; align-items: center; gap: .45rem; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: .25rem .6rem; background: var(--card); margin: .15rem 0; }
 .cm-embed-section:hover, .cm-embed-record:hover { border-color: var(--accent); }
@@ -380,6 +382,11 @@ mark.anno.anno-flash { background: #ffd43b; }
   .cmp.refs-open .cmp-pick { position: absolute; inset: 0; width: 100%; z-index: 20; }
 }
 .figcard img { width: 100%; height: 150px; object-fit: contain; background: #fafafa; display: block; border-bottom: 1px solid var(--line); }
+/* PDF figures embed as a (non-interactive) iframe = the browser's PDF viewer; pointer-events:none lets
+   the wrapping <a> take the click (navigate to the figure's sub-page). */
+.figcard .pdfthumb { width: 100%; height: 150px; background: #fff; display: block; border: 0; border-bottom: 1px solid var(--line); pointer-events: none; }
+.card .cardthumb .pdfthumb { width: 100%; height: 120px; background: #fff; display: block; border: 0; pointer-events: none; }
+.embed-fig .pdfthumb { width: 100%; height: 240px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); display: block; pointer-events: none; }
 .figcard figcaption { padding: .5rem .6rem; font-size: .8rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .figcard .rt { color: var(--muted); }
 .dl { color: var(--muted); text-decoration: none; font-size: 1rem; line-height: 1; }

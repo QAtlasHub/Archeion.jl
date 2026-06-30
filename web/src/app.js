@@ -7,6 +7,7 @@ import {
   projectMeta, addProjectTag, removeProjectTag, addTodo, toggleTodo, removeTodo,
   ensureUser, setRecordImportance, setFigureImportance, setArchived, toggleBookmark,
   bookmarkedSet, userBookmarks, addComment, addTag, removeTag,
+  addAnnotation, recordAnnotations, getAnnotation, removeAnnotation,
   notesForDisplay, allNotesForDisplay, noteForDisplay, getNote, addNote, updateNote, removeNote, setPinned, setNoteArchived, setNoteTags, noteComments, addNoteComment,
   addNoteAnnotation, noteAnnotations, getNoteAnnotation, removeNoteAnnotation, relatedNotes, graphData,
   parseMentions, resolveMentions, parseEmbeds, resolveEmbeds,
@@ -23,12 +24,27 @@ const rid = (id) => encodeURIComponent(id).replace(/%2F/gi, "/");
 const parseTags = (s) => (s || "").split(/[,\s]+/).map((t) => t.replace(/^#/, "").trim()).filter(Boolean);
 
 function sameOrigin(h) {
-  if (!h.origin) return true;
+  if (!h.origin) return true; // no Origin header → not a browser form/fetch (server-to-server LLM channel)
   try {
-    return new URL(h.origin).host === h.host;
+    // compare HOSTNAMEs (ignore :port + case): a proxy can set Host to "site:443" while Origin has no
+    // port, which must NOT read as cross-origin. The hostname still must match → cross-site stays blocked.
+    return new URL(h.origin).hostname.toLowerCase() === String(h.host || "").split(":")[0].toLowerCase();
   } catch {
     return false;
   }
+}
+// The composer sends the note body base64-encoded (body_b64) so a content WAF (Lolipop SiteGuard) can't
+// pattern-match the markdown/math/embeds and 403 the POST. Decode it; fall back to plaintext `body` (JS-off).
+function noteBody(body) {
+  const b = body.get("body_b64");
+  if (b != null) {
+    try {
+      return Buffer.from(b, "base64").toString("utf8");
+    } catch {
+      return "";
+    }
+  }
+  return body.get("body") || "";
 }
 function back(h, fallback) {
   if (h.referer) {
@@ -199,6 +215,27 @@ export function createApp(dbPath) {
         const a = noteAnnotations(db, note.id).find((x) => x.id === aid);
         return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ ...a, body_html: V.mdHtml(a.body_md), can_delete: true }) };
       }
+      // unified annotations: a comment + its LOCATION (record/figure/section/passage) on a record's
+      // Pinax page (annot.js). All server-side — no localStorage "unsaved".
+      const ram = path.match(/^\/api\/record\/(.+)\/annotations(\/del)?$/);
+      if (ram) {
+        const recId = decodeURIComponent(ram[1]);
+        if (!getRecord(db, recId)) return { status: 404, type: "text/plain", body: "no record" };
+        if (ram[2]) { // /annotations/del — own annotation, or admin
+          const a = getAnnotation(db, +body.get("aid"));
+          if (a && a.record_id === recId && (a.user_id === me.id || me.role === "admin")) removeAnnotation(db, a.id);
+          return { status: 204, type: "text/plain", body: "" };
+        }
+        const exact = body.get("exact");
+        const anchor = exact ? { exact, prefix: body.get("prefix") || "", suffix: body.get("suffix") || "" } : null;
+        const aid = addAnnotation(db, recId, {
+          kind: body.get("kind") || "record", page: body.get("page") || "",
+          targetId: body.get("target_id") || "", anchor,
+        }, uid(), body.get("body_md"));
+        if (!aid) return { status: 400, type: "text/plain", body: "bad annotation" };
+        const a = recordAnnotations(db, recId).find((x) => x.id === aid);
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ ...a, body_html: V.mdHtml(a.body_md), can_delete: true }) };
+      }
       if (path === "/bookmark") {
         toggleBookmark(db, uid(), body.get("kind") === "figure" ? "figure" : "record", body.get("id") || "");
         return ok(back(h, "/"));
@@ -265,7 +302,7 @@ export function createApp(dbPath) {
       // they redirect back and the page re-renders — no optimistic path.
       if (path === "/noteadd") {
         const scope = body.get("scope") || "";
-        const nid = addNote(db, scope, body.get("title") || "", body.get("body") || "",
+        const nid = addNote(db, scope, body.get("title") || "", noteBody(body),
           { importance: body.get("importance") || 0, pinned: body.get("pinned") === "1", description: body.get("description") || "" });
         if (nid && body.get("tags") !== null) setNoteTags(db, nid, parseTags(body.get("tags")));
         if (body.get("from") === "compose") return redirect(nid ? `/compose?id=${nid}` : "/compose");
@@ -276,7 +313,7 @@ export function createApp(dbPath) {
         const opts = {}; // importance/description absent on the inline note-card edit → leave them
         if (body.get("importance") !== null) opts.importance = body.get("importance");
         if (body.get("description") !== null) opts.description = body.get("description");
-        if (n) updateNote(db, n.id, body.get("title") || "", body.get("body") || "", opts);
+        if (n) updateNote(db, n.id, body.get("title") || "", noteBody(body), opts);
         if (n && body.get("tags") !== null) setNoteTags(db, n.id, parseTags(body.get("tags")));
         if (body.get("from") === "compose") return redirect(n ? `/compose?id=${n.id}` : "/notes");
         return redirect(n && n.scope ? `/p/${rid(n.scope)}` : "/notes");
@@ -309,7 +346,7 @@ export function createApp(dbPath) {
       if (path === "/api/note/preview") {
         // inline preview of the composer's CURRENT edits (no save) — a full chrome-free present page,
         // loaded into the composer's preview iframe. Markdown + [[mentions]] + ![[embeds]] resolved here.
-        const b = body.get("body") || "";
+        const b = noteBody(body);
         const noteLike = {
           id: body.get("id") || "", scope: body.get("scope") || "",
           title: body.get("title") || "", importance: +(body.get("importance") || 0),
@@ -445,6 +482,24 @@ export function createApp(dbPath) {
       }
     }
     if (path === "/api/graph") return json(graphData(db)); // {nodes,edges} for the /graph canvas
+    {
+      // unified annotations (record/figure/section/passage), each with its LOCATION — annot.js load +
+      // live poll + the LLM. MUST come before the catch-all /api/record/(.+). Optional ?kind=&?page= filter.
+      const ram = path.match(/^\/api\/record\/(.+)\/annotations$/);
+      if (ram) {
+        const id = decodeURIComponent(ram[1]);
+        if (!getRecord(db, id)) return { status: 404, type: "application/json; charset=utf-8", body: "{}" };
+        const opts = {};
+        const k = query.get("kind"); if (k) opts.kind = k;
+        const pg = query.get("page"); if (pg !== null) opts.page = pg;
+        const list = recordAnnotations(db, id, opts).map((a) => ({
+          id: a.id, author: a.author, created_at: a.created_at,
+          target_kind: a.target_kind, page: a.page, target_id: a.target_id, anchor: a.anchor,
+          body_html: V.mdHtml(a.body_md), can_delete: a.user_id === me.id || me.role === "admin",
+        }));
+        return { status: 200, type: "application/json; charset=utf-8", body: JSON.stringify({ annotations: list }) };
+      }
+    }
     {
       // JSON for inject.js (the overlay on a Pinax page): record meta + tags + runs + bookmark + comments
       const m = path.match(/^\/api\/record\/(.+)$/);

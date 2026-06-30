@@ -46,8 +46,8 @@ function record_comments(db, rid)
                 conn,
                 """
                 SELECT c.body_md, c.created_at, COALESCE(u.name,'anon') AS author
-                FROM comments c LEFT JOIN users u ON u.id = c.user_id
-                WHERE c.record_id = ? ORDER BY c.id
+                FROM annotations c LEFT JOIN users u ON u.id = c.user_id
+                WHERE c.record_id = ? AND c.target_kind = 'record' ORDER BY c.id
                 """,
                 (rid,),
             )
@@ -73,11 +73,53 @@ function record_tags(db, rid)
 end
 
 """
+    record_annotation_list(db, rid) -> Vector{NamedTuple}
+
+Every comment/annotation on a record, each WITH its LOCATION — the traceable comment list. One entry per
+`annotations` row (oldest-first): `(; id, kind, page, target, anchor, body_md, author, created_at)`,
+`kind ∈ record/figure/section/passage`, `target` = figure id / section heading ("" for record/passage),
+`anchor` = the passage's text-quote JSON ("" otherwise). So an LLM can read each comment and exactly
+where it points from one query.
+"""
+function record_annotation_list(db, rid)
+    _withdb(db) do conn
+        out = NamedTuple[]
+        for r in DBInterface.execute(
+            conn,
+            """
+            SELECT a.id, a.target_kind, a.page, a.target_id, a.anchor, a.body_md, a.created_at,
+                   COALESCE(u.name,'anon') AS author
+            FROM annotations a LEFT JOIN users u ON u.id = a.user_id
+            WHERE a.record_id = ? ORDER BY a.id
+            """,
+            (rid,),
+        )
+            push!(
+                out,
+                (;
+                    id=Int(r.id),
+                    kind=String(r.target_kind),
+                    page=String(r.page),
+                    target=String(r.target_id),
+                    anchor=r.anchor === missing ? "" : String(r.anchor),
+                    body_md=String(r.body_md),
+                    author=String(r.author),
+                    created_at=String(r.created_at),
+                ),
+            )
+        end
+        return out
+    end
+end
+
+"""
     record_annotations(db, rid) -> NamedTuple
 
 The full app-owned annotation of a record: `(; exists, importance, archived, title, project, tags,
-comments)`. `importance` is 0..3 (shared "notable"); `archived` is a `Bool` — together the human's
-"status". `exists` is `false` when the id isn't in the registry (everything else defaulted).
+comments, annotations)`. `importance` is 0..3 (shared "notable"); `archived` is a `Bool` — together the
+human's "status". `comments` is the record-level discussion (back-compat); `annotations` is the FULL
+location-tagged list (record/figure/section/passage — see `record_annotation_list`). `exists` is `false`
+when the id isn't in the registry (everything else defaulted).
 """
 function record_annotations(db, rid)
     _withdb(db) do conn
@@ -106,6 +148,7 @@ function record_annotations(db, rid)
             project="",
             tags=String[],
             comments=NamedTuple[],
+            annotations=NamedTuple[],
         )
         return (;
             exists=true,
@@ -115,6 +158,7 @@ function record_annotations(db, rid)
             project=project,
             tags=record_tags(conn, rid),
             comments=record_comments(conn, rid),
+            annotations=record_annotation_list(conn, rid),
         )
     end
 end
@@ -204,8 +248,153 @@ function feedback_md(db, rid)
                 println(io, "- **", c.author, "** (", c.created_at, "): ", c.body_md)
             end
         end
+        # anchored comments (figure / section / passage), each tagged with WHERE it points
+        anchored = filter(x -> x.kind != "record", a.annotations)
+        if !isempty(anchored)
+            println(io, "\n## Annotations (by location)")
+            for x in anchored
+                loc = if x.kind == "figure"
+                    string("figure `", x.target, "`")
+                elseif x.kind == "section"
+                    string("section \"", x.target, "\"", isempty(x.page) ? "" : " ($(x.page))")
+                else
+                    string("passage", isempty(x.page) ? "" : " ($(x.page))")
+                end
+                println(io, "- [", loc, "] **", x.author, "**: ", x.body_md)
+            end
+        end
         return String(take!(io))
     end
+end
+
+"""
+    status(db; io=stdout, print=true) -> NamedTuple
+    status(; config=nothing, io=stdout, print=true) -> NamedTuple   # config=nothing → the host's agent; else pull `config`
+
+A one-call overview of the whole registry — so the current state is *queried*, not hand-inspected
+with raw SQLite. Returns `(; projects, records, figures, comments, items)` where `items` is one
+`(; project, para, id, title, importance, archived, figures, runs, comments, updated_at)` per record
+(grouped by PARA bucket then project). With `print=true` it also writes a grouped table to `io`.
+
+`status(db)` reads a local DB (a path or an open `SQLite.DB`). `status(; config=...)` fetches the
+deployed DB via `pull` (see transport.jl) and summarizes the LIVE registry in one call.
+"""
+function status(db; io::IO=stdout, print::Bool=true)
+    _withdb(db) do conn
+        has_comments = _has_table(conn, "comments")
+        has_runs = _has_table(conn, "record_runs")
+        has_notes = _has_table(conn, "notes")
+        items = NamedTuple[]
+        for r in DBInterface.execute(
+            conn,
+            """
+            SELECT r.project AS project, COALESCE(p.para,'?') AS para, r.id AS id, r.title AS title,
+                   r.importance AS importance, r.archived AS archived, COALESCE(r.updated_at,'') AS updated_at
+            FROM records r LEFT JOIN projects p ON p.name = r.project
+            ORDER BY p.para, r.project, r.id
+            """,
+        )
+            # scalars must be read INSIDE the loop (a SQLite.Row is valid only during iteration)
+            rid = String(r.id)
+            push!(
+                items,
+                (;
+                    project=String(r.project),
+                    para=String(r.para),
+                    id=rid,
+                    title=String(r.title),
+                    importance=Int(r.importance),
+                    archived=r.archived != 0,
+                    figures=_count1(
+                        conn, "SELECT COUNT(*) c FROM figures WHERE record_id=?", rid
+                    ),
+                    runs=if has_runs
+                        _count1(
+                            conn,
+                            "SELECT COUNT(*) c FROM record_runs WHERE record_id=?",
+                            rid,
+                        )
+                    else
+                        0
+                    end,
+                    comments=if has_comments
+                        _count1(
+                            conn, "SELECT COUNT(*) c FROM comments WHERE record_id=?", rid
+                        )
+                    else
+                        0
+                    end,
+                    updated_at=String(r.updated_at),
+                ),
+            )
+        end
+        nproj = length(unique(it.project for it in items))
+        nfig = _count1(conn, "SELECT COUNT(*) c FROM figures")
+        ncom = has_comments ? _count1(conn, "SELECT COUNT(*) c FROM comments") : 0
+        summary = (;
+            projects=nproj,
+            records=length(items),
+            figures=nfig,
+            comments=ncom,
+            notes=has_notes ? _count1(conn, "SELECT COUNT(*) c FROM notes") : 0,
+            items=items,
+        )
+        print && _print_status(io, summary)
+        return summary
+    end
+end
+
+function status(; config=nothing, io::IO=stdout, print::Bool=true)
+    tmp = joinpath(tempdir(), "archeion-status.db")
+    # config===nothing → the host's initialized agent (no creds in the caller); else the explicit config.
+    db = config === nothing ? pull(; dest=tmp) : pull(config; out=tmp)
+    return status(db; io=io, print=print)
+end
+
+_count1(conn, sql, args...) = Int(first(DBInterface.execute(conn, sql, args)).c)
+
+function _print_status(io::IO, s)
+    println(
+        io,
+        "registry: ",
+        s.records,
+        " records · ",
+        s.projects,
+        " projects · ",
+        s.figures,
+        " figures · ",
+        s.comments,
+        " comments · ",
+        s.notes,
+        " notes",
+    )
+    para = ""
+    proj = ""
+    for it in s.items
+        if it.para != para
+            para = it.para
+            println(io, "\n▸ ", para)
+            proj = ""
+        end
+        if it.project != proj
+            proj = it.project
+            println(io, "  ", proj)
+        end
+        flags = string("★"^it.importance, it.archived ? " 🗄" : "")
+        println(
+            io,
+            "    - ",
+            it.id,
+            "  (",
+            it.figures,
+            " figs",
+            it.runs > 0 ? ", $(it.runs) runs" : "",
+            it.comments > 0 ? ", $(it.comments) comments" : "",
+            ")",
+            isempty(flags) ? "" : "  " * flags,
+        )
+    end
+    return nothing
 end
 
 """
