@@ -15,7 +15,7 @@ export const mdHtml = (s) => md.render(s || ""); // for the JSON API (inject.js 
 
 // bump on any /app.js or /style.css change → ?v= busts the browser cache (dashboard pages are
 // no-store, so a normal reload picks up the new version — no hard refresh needed).
-export const ASSET_V = "45";
+export const ASSET_V = "46";
 
 export const snipHtml = (s) =>
   esc(s).replaceAll("", "<mark>").replaceAll("", "</mark>");

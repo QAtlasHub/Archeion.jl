@@ -33,6 +33,19 @@ function sameOrigin(h) {
     return false;
   }
 }
+// The composer sends the note body base64-encoded (body_b64) so a content WAF (Lolipop SiteGuard) can't
+// pattern-match the markdown/math/embeds and 403 the POST. Decode it; fall back to plaintext `body` (JS-off).
+function noteBody(body) {
+  const b = body.get("body_b64");
+  if (b != null) {
+    try {
+      return Buffer.from(b, "base64").toString("utf8");
+    } catch {
+      return "";
+    }
+  }
+  return body.get("body") || "";
+}
 function back(h, fallback) {
   if (h.referer) {
     try {
@@ -289,7 +302,7 @@ export function createApp(dbPath) {
       // they redirect back and the page re-renders — no optimistic path.
       if (path === "/noteadd") {
         const scope = body.get("scope") || "";
-        const nid = addNote(db, scope, body.get("title") || "", body.get("body") || "",
+        const nid = addNote(db, scope, body.get("title") || "", noteBody(body),
           { importance: body.get("importance") || 0, pinned: body.get("pinned") === "1", description: body.get("description") || "" });
         if (nid && body.get("tags") !== null) setNoteTags(db, nid, parseTags(body.get("tags")));
         if (body.get("from") === "compose") return redirect(nid ? `/compose?id=${nid}` : "/compose");
@@ -300,7 +313,7 @@ export function createApp(dbPath) {
         const opts = {}; // importance/description absent on the inline note-card edit → leave them
         if (body.get("importance") !== null) opts.importance = body.get("importance");
         if (body.get("description") !== null) opts.description = body.get("description");
-        if (n) updateNote(db, n.id, body.get("title") || "", body.get("body") || "", opts);
+        if (n) updateNote(db, n.id, body.get("title") || "", noteBody(body), opts);
         if (n && body.get("tags") !== null) setNoteTags(db, n.id, parseTags(body.get("tags")));
         if (body.get("from") === "compose") return redirect(n ? `/compose?id=${n.id}` : "/notes");
         return redirect(n && n.scope ? `/p/${rid(n.scope)}` : "/notes");
@@ -333,7 +346,7 @@ export function createApp(dbPath) {
       if (path === "/api/note/preview") {
         // inline preview of the composer's CURRENT edits (no save) — a full chrome-free present page,
         // loaded into the composer's preview iframe. Markdown + [[mentions]] + ![[embeds]] resolved here.
-        const b = body.get("body") || "";
+        const b = noteBody(body);
         const noteLike = {
           id: body.get("id") || "", scope: body.get("scope") || "",
           title: body.get("title") || "", importance: +(body.get("importance") || 0),

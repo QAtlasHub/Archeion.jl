@@ -269,6 +269,25 @@ test("composer: /api/note/preview renders ![[figure]] embeds + [[mention]] links
   assert.match(r.body, /href="\/r\/p\/r1"/); // mention linked
 });
 
+test("composer: body_b64 (content-WAF bypass) decodes server-side for both preview AND save", () => {
+  const app = setup();
+  const src = "result ![[p/r1:mag]] see [[p/r1]] with $x_1$"; // the markdown a content WAF would 403 on
+  const b64 = Buffer.from(src, "utf8").toString("base64");
+  // preview: only body_b64 reaches the server (plaintext body blanked) → still renders the real content
+  const pv = app("POST", "/api/note/preview", new URLSearchParams(), {
+    headers: { origin: "http://localhost", host: "localhost", user: "alice", trustedUser: "alice" },
+    body: new URLSearchParams({ body: "", body_b64: b64 }),
+  });
+  assert.equal(pv.status, 200);
+  assert.match(pv.body, /\/figures\/mag\.svg/); // decoded embed transcluded
+  assert.match(pv.body, /class="katex"/); // decoded math rendered
+  // save: the STORED note holds the decoded markdown (so /show renders identically)
+  const sv = post(app, "/noteadd", { scope: "proj", title: "B64", body: "", body_b64: b64, from: "compose" });
+  assert.equal(sv.status, 303);
+  const id = sv.headers.Location.match(/id=(\d+)/)[1];
+  assert.match(get(app, "/show/" + id).body, /\/figures\/mag\.svg/); // decoded + persisted
+});
+
 test("composer preview: a full page of the CURRENT edits, chrome-free (no header → no duplicate)", () => {
   const app = setup();
   const r = app("POST", "/api/note/preview", new URLSearchParams(), {
