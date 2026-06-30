@@ -24,9 +24,11 @@ const rid = (id) => encodeURIComponent(id).replace(/%2F/gi, "/");
 const parseTags = (s) => (s || "").split(/[,\s]+/).map((t) => t.replace(/^#/, "").trim()).filter(Boolean);
 
 function sameOrigin(h) {
-  if (!h.origin) return true;
+  if (!h.origin) return true; // no Origin header → not a browser form/fetch (server-to-server LLM channel)
   try {
-    return new URL(h.origin).host === h.host;
+    // compare HOSTNAMEs (ignore :port + case): a proxy can set Host to "site:443" while Origin has no
+    // port, which must NOT read as cross-origin. The hostname still must match → cross-site stays blocked.
+    return new URL(h.origin).hostname.toLowerCase() === String(h.host || "").split(":")[0].toLowerCase();
   } catch {
     return false;
   }
