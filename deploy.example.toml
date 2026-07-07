@@ -5,6 +5,18 @@
 # host/account in the Lolipop user panel; point `remote_dir` at the document root of the
 # (private) subdomain you serve the registry from, e.g. data.sota-shimozono.com.
 # Make it private with Lolipop's access-restriction panel, or Archeion.write_basic_auth.
+#
+# WHERE this file can live — `Archeion.deploy` resolves the config in this order (first hit
+# wins), so pick ONE:
+#   1. an explicit `config=` path passed to `deploy(site; config=...)`;
+#   2. `deploy.local.toml` in the current directory (the classic per-project layout above);
+#   3. `ENV["ARCHEION_DEPLOY"]` — set it to point anywhere, e.g. a path on a shared drive;
+#   4. the MACHINE-GLOBAL default `~/.archeion/deploy.toml` (or `$ARCHEION_HOME/deploy.toml`
+#      if ARCHEION_HOME is set) — put ONE copy of this file there and every project on this
+#      machine finds it automatically: no per-project config, no password prompt.
+# `chmod 600` whichever file you use for (3)/(4) — that's the whole security mechanism (perms,
+# not encryption); Archeion checks the mode bits and `@warn`s (never hard-errors) if a
+# machine-global config is group- or other-readable/writable.
 
 # The push/pull transport is backend-neutral (see src/transport.jl). `kind` selects the backend;
 # `db_path` is the registry DB's path under the remote docroot, used by `Archeion.pull` to fetch the

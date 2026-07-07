@@ -50,6 +50,13 @@ Rules that keep this consistent:
 - **This repo is config-free** — it ships only the engine + the `deploy.example.toml` /
   `archeion.example.toml` templates. A project's `[archeion]` lives in the **project** (or gitignored
   locally); secrets go in env. Nothing project-specific is ever committed here.
+- **`deploy`'s `config` auto-discovers when omitted** (`Archeion.deploy(site)`, no `config=`):
+  explicit arg → `deploy.local.toml` in the CWD → `ENV["ARCHEION_DEPLOY"]` → the machine-global
+  default `~/.archeion/deploy.toml` (`$ARCHEION_HOME/deploy.toml` if set) — see
+  `_resolve_deploy_config` in `src/deploy.jl`. One 0600 file outside every repo can then drive
+  deploy for **every** project on a machine: no per-project `deploy.local.toml`, no password
+  prompt. A discovered machine-global config that isn't ~0600 gets a `@warn` (never a hard
+  error) — perms, not encryption, are what keep it out of reach of anything but the owning user.
 - **One shared registry, partitioned by `project`** (records are `project/source`). Do NOT split into
   per-project DB files — that fragments the registry and loses the cross-project "have we run this?"
   value (the LLM-loop memory). Point `[archeion] db` at the same shared DB everywhere (an `ARCHEION_DB`

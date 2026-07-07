@@ -1,7 +1,9 @@
 # Deploy the built static site to a private host over FTPS — Lolipop has no SSH, so FTPS
-# (via lftp) is the upload path. Credentials + remote target live in a gitignored config
-# (deploy.local.toml) or env vars; they never enter the repo. Optionally writes
-# .htaccess/.htpasswd for HTTP Basic auth so the published site stays private.
+# (via lftp) is the upload path. Credentials + remote target live in a gitignored per-project
+# config (deploy.local.toml) or env vars, OR a machine-global config discovered via
+# ARCHEION_DEPLOY / ~/.archeion/deploy.toml (see `_resolve_deploy_config` below) — never in the
+# repo. Optionally writes .htaccess/.htpasswd for HTTP Basic auth so the published site stays
+# private.
 
 struct DeployTarget
     host::String
@@ -18,6 +20,9 @@ end
 Read FTPS credentials + remote target from a gitignored TOML `config` with an `[ftp]`
 table (`host`, `user`, `password`, `remote_dir`, optional `tls`/`tls_verify`). The password
 may instead come from `ENV["ARCHEION_FTP_PASSWORD"]` (preferred — keeps it out of files).
+`config` must already be a concrete, resolved path — see `deploy`/`_resolve_deploy_config` for
+how that path is discovered (explicit arg → CWD `deploy.local.toml` → `ARCHEION_DEPLOY` env →
+machine-global `~/.archeion/deploy.toml`).
 """
 function read_deploy_target(config::AbstractString)
     isfile(config) || error("read_deploy_target: config not found: $(config)")
@@ -115,18 +120,86 @@ function _run_lftp(script::AbstractString)
     return nothing
 end
 
-"""
-    deploy(site; config="deploy.local.toml", delete=true) -> Bool
+# ── machine-global deploy config discovery ──────────────────────────────────────────────────────────
+# Resolve WHICH config file `deploy` should read, so a single 0600 file OUTSIDE every repo
+# (`<ARCHEION_HOME>/deploy.toml`, default `~/.archeion/deploy.toml` — `_archeion_home` is defined in
+# agent.jl) can drive deploy for every project on this machine: no per-project config, no password
+# prompt. First hit wins:
+#   1. `config`, if given and it exists                            (explicit — backward compat)
+#   2. `deploy.local.toml` in the current directory, if it exists  (implicit CWD — backward compat)
+#   3. ENV["ARCHEION_DEPLOY"], if set                               (machine-global, explicit path)
+#   4. `<ARCHEION_HOME>/deploy.toml`, if it exists                  (machine-global default)
+# Returns `(; path, machine_global)`. `machine_global` (true only for sources 3/4) tells `deploy`
+# whether to run the 0600 perms check below — an explicit arg or a CWD project file is the caller's
+# own business, not machine-wide secret storage, so it's left alone.
+function _resolve_deploy_config(config::Union{Nothing,AbstractString})
+    cwd_local = "deploy.local.toml"
+    env_path = get(ENV, "ARCHEION_DEPLOY", "")
+    global_path = joinpath(_archeion_home(), "deploy.toml")
 
-Mirror the static site at `site` to a private host over FTPS using `config`. Uploads via
-`lftp`, passing credentials in a 0600 temp script (password never in process args). With
-`delete=true` the remote mirrors the local tree exactly (removes stale remote files).
-Returns `true` on success.
+    if config !== nothing && isfile(config)
+        return (; path=String(config), machine_global=false)
+    elseif isfile(cwd_local)
+        return (; path=cwd_local, machine_global=false)
+    elseif !isempty(env_path)
+        return (; path=env_path, machine_global=true)
+    elseif isfile(global_path)
+        return (; path=global_path, machine_global=true)
+    end
+    return error(
+        "Archeion: no deploy config found. Tried, in order: " *
+        (config === nothing ? "" : "explicit config $(config); ") *
+        "./$(cwd_local) (cwd); ENV[\"ARCHEION_DEPLOY\"] (unset or missing); $(global_path) " *
+        "(machine-global default). Fix: create a machine-global config at " *
+        "~/.archeion/deploy.toml — chmod 600 it! (copy deploy.example.toml) — or set " *
+        "ARCHEION_DEPLOY to point at your config file.",
+    )
+end
+
+# Warn — never hard-error, so we don't break a working deploy — if a MACHINE-GLOBAL config (only
+# sources 3/4 above) is readable/writable by group or other. Perms, not encryption, are the whole
+# mechanism that keeps a plaintext credential file living outside the repo "hard to see from
+# outside", so this is the enforcement point: it reads ONLY the mode bits (`filemode`), never the
+# file's contents, and never logs the password or any config contents.
+function _check_deploy_config_perms(path::AbstractString)
+    try
+        mode = filemode(path) & 0o777
+        if !iszero(mode & 0o077)
+            @warn "Archeion: deploy config is readable/writable by group or other — it may hold " *
+                "an FTP password. Fix: chmod 600 $(path)" path = path mode = string(
+                mode; base=8
+            )
+        end
+    catch e
+        e isa InterruptException && rethrow()
+        # advisory only — never let a perms-check failure break a working deploy
+        @warn "Archeion: could not check permissions on deploy config" path = path exception =
+            e
+    end
+    return nothing
+end
+
+"""
+    deploy(site; config=nothing, delete=true) -> Bool
+
+Mirror the static site at `site` to a private host over FTPS using a resolved deploy config.
+`config` is resolved by `_resolve_deploy_config`, in order: the explicit `config` arg (if it
+exists) → `deploy.local.toml` in the current directory → `ENV["ARCHEION_DEPLOY"]` → the
+machine-global default `<ARCHEION_HOME>/deploy.toml` (default `~/.archeion/deploy.toml`). That
+lets ONE 0600 file outside every repo drive deploy for every project on a machine — no
+per-project config, no password prompt. A machine-global config (the last two sources) that is
+group- or other-readable/writable gets a prominent `@warn` naming the file and the `chmod 600`
+fix (never a hard error — permissions, not encryption, are what make the secret "hard to see
+from outside"). Uploads via `lftp`, passing credentials in a 0600 temp script (password never in
+process args). With `delete=true` the remote mirrors the local tree exactly (removes stale
+remote files). Returns `true` on success.
 """
 function deploy(
-    site::AbstractString; config::AbstractString="deploy.local.toml", delete::Bool=true
+    site::AbstractString; config::Union{Nothing,AbstractString}=nothing, delete::Bool=true
 )
     isdir(site) || error("deploy: site dir not found: $(site)")
-    _run_lftp(_lftp_script(read_deploy_target(config), site; delete=delete))
+    resolved = _resolve_deploy_config(config)
+    resolved.machine_global && _check_deploy_config_perms(resolved.path)
+    _run_lftp(_lftp_script(read_deploy_target(resolved.path), site; delete=delete))
     return true
 end
