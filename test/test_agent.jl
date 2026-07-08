@@ -84,6 +84,33 @@ end
     @test !rev["ok"] && occursin("unknown op", rev["error"])
 end
 
+@testset "agent push: a caller-supplied `site` overrides content_dir (any STAGE via the agent)" begin
+    dir = mktempdir()
+    remote = joinpath(dir, "remote")
+    content = joinpath(dir, "content")
+    mkpath(content)
+    write(joinpath(content, "from_content.txt"), "C")
+    stage = joinpath(dir, "stage")
+    mkpath(stage)
+    write(joinpath(stage, "from_stage.txt"), "S")
+    cfg = Dict(
+        "archeion" => Dict(
+            "content_dir" => content,
+            "remote" => Dict(
+                "kind" => "local", "path" => remote, "db_path" => "data/archeion.db"
+            ),
+        ),
+    )
+    # `site` given → THAT dir is pushed, not content_dir (per-project STAGE via the agent)
+    @test _handle(Dict("op" => "push", "site" => stage, "delete" => false), cfg)["ok"]
+    @test isfile(joinpath(remote, "from_stage.txt"))
+    @test !ispath(joinpath(remote, "from_content.txt"))
+    # no `site` AND no content_dir → a clear error, never a silent empty push
+    nocfg = Dict("archeion" => Dict("remote" => Dict("kind" => "local", "path" => remote)))
+    r = _handle(Dict("op" => "push"), nocfg)
+    @test !r["ok"] && occursin("no `site`", r["error"])
+end
+
 @testset "socket wire: a real connect→serialize→handle→deserialize round-trip" begin
     dir = mktempdir()
     sock = joinpath(dir, "a.sock")

@@ -82,14 +82,19 @@ end
 
 # ── no-config front door (the LLM's path; secret ops delegated to the agent) ────────────────────────
 """
-    deploy(; delete=false) -> Dict
+    deploy(; site="", delete=false) -> Dict
 
-Push the active project's local content tree to the (agent-held, hidden) remote. No config/creds in the
-caller — the agent does the FTP. Distinct from `deploy(site; config)` (the explicit, creds-in-config form).
+Push a local content tree to the (agent-held, hidden) remote via the agent — no config/creds in the
+caller, the agent does the FTP. `site` is the local docroot-level dir to push; when omitted, the agent
+falls back to the config's `[archeion].content_dir`. Passing `site` lets **any** project's STAGE deploy
+through the machine-global agent (creds stay in the agent), mirroring the explicit `deploy(site; config)`
+form — so the config-file and machine-global paths coexist over the same `[ftp]` config.
 """
-function deploy(; delete::Bool=false)
+function deploy(; site::AbstractString="", delete::Bool=false)
     a = active()
-    r = _agent(Dict("op" => "push", "delete" => delete); sock=String(a["socket"]))
+    req = Dict{String,Any}("op" => "push", "delete" => delete)
+    isempty(site) || (req["site"] = abspath(site))
+    r = _agent(req; sock=String(a["socket"]))
     Bool(get(r, "ok", false)) ||
         error("Archeion.deploy (agent): " * String(get(r, "error", "failed")))
     return r

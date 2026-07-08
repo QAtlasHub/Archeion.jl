@@ -27,12 +27,16 @@ function _handle(req::AbstractDict, cfg)
     if op == "ping"
         return Dict{String,Any}("ok" => true, "host" => gethostname())
     elseif op == "push"
-        site = _content_dir(cfg)
+        # A caller-supplied `site` (an absolute local dir) wins, so any project's STAGE can be
+        # deployed through the agent (creds stay here) — symmetric with the explicit
+        # `deploy(site; config)`. Falls back to the config's `[archeion].content_dir`.
+        site = String(get(req, "site", _content_dir(cfg)))
         isempty(site) && return Dict{String,Any}(
-            "ok" => false, "error" => "no [archeion].content_dir in config"
+            "ok" => false,
+            "error" => "push: no `site` given and no [archeion].content_dir in config",
         )
         isdir(site) || return Dict{String,Any}(
-            "ok" => false, "error" => "content_dir not found: $(site)"
+            "ok" => false, "error" => "push: site dir not found: $(site)"
         )
         push_dir(_transport_from(cfg), site; delete=Bool(get(req, "delete", false)))
         return Dict{String,Any}("ok" => true, "pushed" => site)
