@@ -17,15 +17,17 @@ Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 
-[sources]
-# Not yet in the General registry — pin to GitHub (rev=main) instead of local sibling
-# paths, so CI / a fresh clone can resolve them. ParamIO is a transitive dep of DataVault
-# (not used directly here); it must sit in [deps] for its git-url source to apply during
-# resolution, hence the Aqua stale_deps ignore in test/runtests.jl. Drop an entry once the
-# package lands in General.
-DataVault = {rev = "main", url = "https://github.com/sotashimozono/DataVault.jl"}
-ParamIO = {rev = "main", url = "https://github.com/sotashimozono/ParamIO.jl"}
-Pinax = {rev = "main", url = "https://github.com/sotashimozono/Pinax.jl"}
+[sources.DataVault]
+rev = "main"
+url = "https://github.com/sotashimozono/DataVault.jl"
+
+[sources.ParamIO]
+rev = "main"
+url = "https://github.com/sotashimozono/ParamIO.jl"
+
+[sources.Pinax]
+rev = "main"
+url = "https://github.com/sotashimozono/Pinax.jl"
 
 [compat]
 Aqua = "0.8"
