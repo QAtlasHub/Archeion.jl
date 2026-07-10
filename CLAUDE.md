@@ -47,8 +47,8 @@ Archeion.deploy("config.toml")                                  # reads [archeio
 ```
 
 Rules that keep this consistent:
-- **This repo is config-free** — it ships only the engine + the `deploy.example.toml` /
-  `archeion.example.toml` templates. A project's `[archeion]` lives in the **project** (or gitignored
+- **This repo is config-free** — it ships only the engine + the `config/deploy.example.toml` /
+  `config/archeion.example.toml` templates. A project's `[archeion]` lives in the **project** (or gitignored
   locally); secrets go in env. Nothing project-specific is ever committed here.
 - **`deploy`'s `config` auto-discovers when omitted** (`Archeion.deploy(site)`, no `config=`):
   explicit arg → `deploy.local.toml` in the CWD → `ENV["ARCHEION_DEPLOY"]` → the machine-global

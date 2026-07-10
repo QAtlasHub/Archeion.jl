@@ -151,7 +151,7 @@ function _resolve_deploy_config(config::Union{Nothing,AbstractString})
         (config === nothing ? "" : "explicit config $(config); ") *
         "./$(cwd_local) (cwd); ENV[\"ARCHEION_DEPLOY\"] (unset or missing); $(global_path) " *
         "(machine-global default). Fix: create a machine-global config at " *
-        "~/.archeion/deploy.toml — chmod 600 it! (copy deploy.example.toml) — or set " *
+        "~/.archeion/deploy.toml — chmod 600 it! (copy config/deploy.example.toml) — or set " *
         "ARCHEION_DEPLOY to point at your config file.",
     )
 end
