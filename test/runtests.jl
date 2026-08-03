@@ -1,42 +1,33 @@
 ENV["GKSwstype"] = "100"
 
 using Archeion
-using Test, Aqua
-const dirs = ["."]
+using Test
+using TestShards, Aqua
 
-const FIG_BASE = joinpath(pkgdir(Archeion), "docs", "src", "assets")
-const PATHS = Dict()
-mkpath.(values(PATHS))
-
-@testset "tests" begin
-    # ----- Test the module itself. -----
-    @testset "Aqua tests" begin
-        # ParamIO is declared in [deps] only to carry its git-url source (a transitive dep
-        # of DataVault, not used directly here) until it lands in the General registry.
-        Aqua.test_all(Archeion; stale_deps=(ignore=[:ParamIO],))
-    end
-    # ----- Test files in the "test" directory. -----
-    test_args = copy(ARGS)
-    println("Passed arguments ARGS = $(test_args) to tests.")
-    @time for dir in dirs
-        dirpath = joinpath(@__DIR__, dir)
-        println("\nTest $(dirpath)")
-        files = sort(
-            filter(f -> startswith(f, "test_") && endswith(f, ".jl"), readdir(dirpath))
-        )
-        if isempty(files)
-            println("  No test files found in $(dirpath).")
-            @test false
-        else
-            for f in files
-                @testset "$f" begin
-                    filepath = joinpath(dirpath, f)
-                    @time begin
-                        println("  Including $(filepath)")
-                        include(filepath)
-                    end
-                end
-            end
+# Every `test_*.jl` under `test/`, in a deterministic order, each one its own shardable unit.
+# `@shard` shadows `include` inside the block, so a unit is whatever this loop includes — a new
+# file, or a whole new directory, is picked up BY BEING ON DISK, rather than by being added to
+# the `dirs` list that used to sit here and could disagree with the tree.
+#
+# Two rules when adding to this, and they are the only two:
+#
+#   1. SHARED FIXTURES GO ABOVE THIS BLOCK. A helper included inside becomes a unit of its own,
+#      lands on ONE shard, and every test file on the other shards that needed it fails.
+#   2. ANYTHING THAT IS NOT A `test_*.jl` FILE MUST BE NAMED. The glob does not error on what it
+#      does not match; it silently stops running it.
+#
+# A bare `Pkg.test()` with nothing set in the environment runs all of it, in this order. Run one
+# shard locally with `TESTSHARDS_ID=s2 TESTSHARDS_N=4 julia --project -e 'using Pkg; Pkg.test()'`.
+TestShards.@shard begin
+    for (dir, _, files) in sort!(collect(walkdir(@__DIR__)))
+        for f in sort(files)
+            startswith(f, "test_") && endswith(f, ".jl") || continue
+            include(joinpath(dir, f))
         end
+    end
+    # Whole-package QA. It is not a file, so `@unit` gives it a key of its own and it
+    # becomes an ordinary shardable unit rather than something pinned to one shard.
+    TestShards.@unit "aqua" begin
+        Aqua.test_all(Archeion)
     end
 end
