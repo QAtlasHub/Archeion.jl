@@ -28,6 +28,8 @@ TestShards.@shard begin
     # Whole-package QA. It is not a file, so `@unit` gives it a key of its own and it
     # becomes an ordinary shardable unit rather than something pinned to one shard.
     TestShards.@unit "aqua" begin
-        Aqua.test_all(Archeion)
+        # ParamIO is used through an extension, so Aqua's stale_deps check flags it — the keyword
+        # was on the call this replaced.
+        Aqua.test_all(Archeion; stale_deps=(ignore=[:ParamIO],))
     end
 end

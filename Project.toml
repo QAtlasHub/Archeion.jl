@@ -1,6 +1,6 @@
 name = "Archeion"
 uuid = "4f7774e9-efb7-42d6-b735-122dcc7ea7b8"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["sota shimozono <shimozono-sota631@g.ecc.u-tokyo.ac.jp>"]
 
 [deps]
