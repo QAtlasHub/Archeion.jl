@@ -32,7 +32,7 @@ url = "https://github.com/QAtlasHub/Pinax.jl"
 [compat]
 Aqua = "0.8"
 DBInterface = "2"
-DataVault = "0.7"
+DataVault = "0.7, 0.8"
 Dates = "1"
 LibGit2 = "1"
 Markdown = "1"
