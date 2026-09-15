@@ -37,11 +37,17 @@ function _git_state(srcdir::AbstractString)
 end
 
 """
-    capture_repro(srcdir, dest; config=nothing, strict=false) -> ReproBundle
+    capture_repro(srcdir, dest; config=nothing, strict=false, env="") -> ReproBundle
 
 Snapshot the reproducibility bundle of the project at `srcdir` into `dest/repro/`: the git
 commit + dirty flag, `Project.toml`, `Manifest.toml`, the Julia version, an optional
 `config` file, and a runnable `reproduce.sh` recipe.
+
+`env` is the directory whose `Project.toml` / `Manifest.toml` are snapshotted, and defaults to
+`srcdir`. They are the same directory only when the code that ran and the environment that ran it
+live together. A study whose render has its own env (`projects/X/report/`) must pass it, or the
+bundle pins an environment that never ran while claiming it did; `reproduce.sh` then names that
+directory in its `--project=`.
 
 With `strict=true`, a dirty git tree raises (refuse to record a non-reproducible run);
 otherwise the dirty state is recorded and a warning is emitted. A `config` path that does
@@ -53,6 +59,7 @@ function capture_repro(
     dest::AbstractString;
     config::Union{Nothing,AbstractString}=nothing,
     strict::Bool=false,
+    env::AbstractString="",
 )
     repro = joinpath(dest, "repro")
     mkpath(repro)
@@ -63,13 +70,14 @@ function capture_repro(
         strict ? error(msg) : @warn msg
     end
 
+    envdir = isempty(env) ? String(srcdir) : String(env)
     for f in ("Project.toml", "Manifest.toml")
-        p = joinpath(srcdir, f)
+        p = joinpath(envdir, f)
         isfile(p) && cp(p, joinpath(repro, f); force=true)
     end
     has_manifest = isfile(joinpath(repro, "Manifest.toml"))
     has_manifest ||
-        @warn "capture_repro: no Manifest.toml in `$(srcdir)` — environment is NOT pinned (Project.toml alone is insufficient for Julia reproducibility)."
+        @warn "capture_repro: no Manifest.toml in `$(envdir)` — environment is NOT pinned (Project.toml alone is insufficient for Julia reproducibility)."
 
     # Capture the optional config file. Guard against a name collision with the env
     # snapshot, and warn (don't silently drop) when a path is given but missing.
@@ -97,7 +105,9 @@ function capture_repro(
         else
             println(io, "git checkout ", sha)
         end
-        println(io, "julia --project=. -e 'using Pkg; Pkg.instantiate()'")
+        # Name the environment that actually ran, which is `.` only when it is the source tree.
+        proj = envdir == String(srcdir) ? "." : relpath(envdir, srcdir)
+        println(io, "julia --project=", proj, " -e 'using Pkg; Pkg.instantiate()'")
         config_name === nothing || println(io, "# config used: ", config_name)
         return nothing
     end

@@ -142,7 +142,8 @@ title from it.
 Written under `<root>/<project>/<source>/`:
 
 * the contents of `dir`, copied file by file;
-* `repro/`, when `srcdir` is given -- see [`capture_repro`](@ref) for what it snapshots and for
+* `repro/`, when `srcdir` is given -- see [`capture_repro`](@ref) for what it snapshots, for `env`
+  (the directory whose `Project.toml` / `Manifest.toml` ran, when it is not `srcdir` itself) and for
   `strict`, which refuses a source tree with uncommitted changes;
 * `record.toml` -- the [`Record`](@ref), and the only file the index reads.
 
@@ -170,6 +171,7 @@ function deposit(
     root::AbstractString="",
     config=nothing,
     srcdir::AbstractString="",
+    env::AbstractString="",
     strict::Bool=false,
     summary::AbstractString="",
     tags::AbstractVector{<:AbstractString}=String[],
@@ -209,7 +211,7 @@ function deposit(
     gitsha, dirty = "unknown", false
     if !isempty(srcdir)
         cfgpath = config isa AbstractString ? String(config) : nothing
-        bundle = capture_repro(srcdir, recdir; config=cfgpath, strict=strict)
+        bundle = capture_repro(srcdir, recdir; config=cfgpath, strict=strict, env=env)
         gitsha, dirty = bundle.git_commit, bundle.git_dirty
     end
 
