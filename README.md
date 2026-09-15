@@ -56,6 +56,18 @@ A deposit into a git-backed registry is a commit, staging the record directory a
 explicit path, so the history answers "what did this look like on that date". Replicating a registry
 is `git clone`: no server, no export step.
 
+Publishing a public registry is one call, and it refuses rather than pretending:
+
+```julia
+Archeion.publish_pages("/path/to/Registry")   # -> the URL GitHub serves it at
+```
+
+It asks GitHub whether the repository is private (Pages needs a paid plan there) and whether Pages
+is enabled at all, because a push to `gh-pages` succeeds either way: a green deploy reports that the
+push happened, never that the site is reachable. It also refuses a `gh-pages` that is not this
+registry's site, which is what a Documenter branch looks like. The branch carries one commit and is
+force-pushed, because it is derived from the registry and its history would only repeat `main`'s.
+
 **Visibility is a property of the registry, not of a record.** A private registry is a private repo:
 read the clone locally, no site. A public registry is a public repo, and its `gh-pages` branch serves
 the catalogue. Publishing a result means depositing it into the public registry, so nothing can leak

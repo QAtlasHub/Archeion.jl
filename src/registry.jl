@@ -65,19 +65,24 @@ function read_records(root::AbstractString=registry_root())
 end
 
 """
-    reindex(root=registry_root(); title="Archeion", search=false) -> path
+    reindex(root=registry_root(); title="", search=false) -> path
 
-Rebuild `root/index.html` from the records currently on disk and return its path. With
-`search=true`, refresh the Pagefind index too ([`add_search`](@ref)).
+Rebuild `root/index.html` from the records currently on disk and return its path. The title
+defaults to the registry's declared name ([`registry_info`](@ref)), or to `"Archeion"` when the
+root is not a declared registry. With `search=true`, refresh the Pagefind index too
+([`add_search`](@ref)).
 
 Idempotent and cheap: it reads the `record.toml` files and re-renders one page. Call it after
 anything changes the tree, including a record you added by hand.
 """
 function reindex(
-    root::AbstractString=registry_root();
-    title::AbstractString="Archeion",
-    search::Bool=false,
+    root::AbstractString=registry_root(); title::AbstractString="", search::Bool=false
 )
+    # A catalogue titled "Archeion" tells a reader which tool made it, not which registry they are
+    # looking at; the declared name does, when there is one.
+    if isempty(title)
+        title = is_registry(root) ? registry_info(root).name : "Archeion"
+    end
     path = build_index(read_records(root); out=root, title=title)
     search && add_search(root)
     return path
@@ -193,19 +198,24 @@ function deposit(
     )
     mkpath(recdir)
 
-    written = _mirror(dir, recdir)
-    pruned = _prune_previous(recdir, written)
-    _write_deposit_manifest(recdir, written)
-
-    # Named `gitsha`, not `commit`: the `commit` kwarg is a Bool, and a local of the same name
-    # would shadow it (the kind of rebinding that shows up as `non-boolean used in boolean
-    # context` three statements later).
+    # Provenance is captured BEFORE anything is written into the registry, for two reasons: a
+    # `strict` refusal then leaves no half-written record, and when the registry IS the source tree
+    # (a registry that carries the script building it), copying the render in first would make the
+    # tree dirty by construction and the capture would report it.
+    #
+    # Named `gitsha`, not `commit`: the `commit` kwarg is a Bool, and a local of the same name would
+    # shadow it (the kind of rebinding that shows up as `non-boolean used in boolean context` three
+    # statements later).
     gitsha, dirty = "unknown", false
     if !isempty(srcdir)
         cfgpath = config isa AbstractString ? String(config) : nothing
         bundle = capture_repro(srcdir, recdir; config=cfgpath, strict=strict)
         gitsha, dirty = bundle.git_commit, bundle.git_dirty
     end
+
+    written = _mirror(dir, recdir)
+    pruned = _prune_previous(recdir, written)
+    _write_deposit_manifest(recdir, written)
 
     rec = Record(;
         id=id,

@@ -194,3 +194,30 @@ if Sys.which("git") !== nothing
 else
     @info "git CLI not found: skipping the provenance half of the registry tests"
 end
+
+@testset "the catalogue is titled by the registry, and provenance is captured before writing" begin
+    # A catalogue titled "Archeion" says which tool made it, not which registry this is.
+    root = mktempdir()
+    Archeion.deposit(_built(); project="p", source="s", title="T", root=root)
+    @test occursin("<title>Archeion</title>", read(joinpath(root, "index.html"), String))
+
+    named = joinpath(mktempdir(), "Lab")
+    Archeion.create_registry(named; name="Lab Registry", git=false)
+    Archeion.deposit(_built(); project="p", source="s", title="T", root=named)
+    @test occursin(
+        "<title>Lab Registry</title>", read(joinpath(named, "index.html"), String)
+    )
+
+    # A `strict` refusal must leave no half-written record: the capture happens first.
+    if Sys.which("git") !== nothing
+        src = mktempdir()
+        run(`git -C $src init -q`)
+        write(joinpath(src, "untracked.txt"), "x")
+        reg = mktempdir()
+        @test_throws ErrorException Archeion.deposit(
+            _built(); project="p", source="s", title="T", root=reg, srcdir=src, strict=true
+        )
+        @test !isfile(joinpath(reg, "p", "s", "index.html"))
+        @test !isfile(joinpath(reg, "p", "s", "record.toml"))
+    end
+end
