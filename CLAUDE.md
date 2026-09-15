@@ -1,109 +1,118 @@
-# CLAUDE.md — Archeion.jl
+# CLAUDE.md: Archeion.jl
 
-**The experiment registry — the HUMAN confirmation loop** of the infra workflow (ParamIO →
-DataVault → ParallelManager → Pinax → **Archeion**). Pinax renders two faces of a result; they fan
-out to two loops: `agent.json` → an LLM reasons → the next sweep (steering); the **gallery →
-Archeion → deploy → a human browses and confirms** (confirmation). Archeion *is* that human loop:
-it accumulates Pinax-rendered artifacts into one searchable, annotatable store and serves them.
+**The experiment registry, the HUMAN confirmation loop** of the infra workflow (ParamIO →
+DataVault → ParallelManager → Pinax → **Archeion**). Pinax renders two faces of a result; they
+fan out to two loops: `agent.json` → an LLM reasons → the next sweep (steering); the **gallery →
+Archeion → a human browses and confirms** (confirmation). Archeion is that human loop: rendered
+results accumulate in it, each carrying the provenance needed to reproduce it.
 See [`../CLAUDE.md`](../CLAUDE.md) for the whole workflow.
 
-## Two halves, one data contract — the seam
+## The spine: the registry IS a directory tree
 
-| half | role | stack | where |
-| --- | --- | --- | --- |
-| `Archeion.jl` (Julia) | **`ingest`** Pinax artifacts (figures + provenance + `body_md`) → DB/figures; `build_index`; `deploy` | Julia | panza (build time) |
-| `Archeion.jl/web` (Node) | **serve** the registry + **write-back** (memos / discussion / tags / status / favorite) + a **Zettelkasten note layer** (notes · structure-note composer · advisor `/show` pages) | Node | panza daemon *or* Lolipop CGI |
+```
+<root>/                            $ARCHEION_REGISTRY, or [archeion] root, or ~/registry
+  index.html                       the catalogue, rebuilt from the tree
+  pagefind/                        client-side full-text search (optional, no server)
+  <project>/<source>/
+    record.toml                    the ONLY file this package parses
+    repro/                         commit, dirty flag, Project.toml, Manifest.toml, reproduce.sh
+    index.html  assets/            the rendered result, exactly as it was built
+    <anything else>                sidecars: notes, slides, an annotation store, a PDF
+```
 
-They meet at the **SQLite DB (`web/db/schema.sql`) + figures under `data/figures/`** — Julia writes,
-Node reads. Julia public API: `ingest`, `build_index`, `add_search`, `deploy`, `Record` /
-`write_record`, `capture_repro`, `discover` / `records_from_outdirs` / `master_ledger`.
+| verb | role |
+| --- | --- |
+| `deposit(dir; project, source, title/doc, srcdir, root)` | copy a built dir in + `capture_repro` + `write_record` + reindex |
+| `read_records(root)` | every dir holding a `record.toml`, at any depth, newest first |
+| `reindex(root; search)` | rebuild `index.html` (+ Pagefind) from the tree |
+| `registry_root(; root, config)` | arg → `[archeion] root` → `ENV["ARCHEION_REGISTRY"]` → `~/registry` |
+| `capture_repro(srcdir, dest; strict)` | env/code provenance (Pinax records *figure* provenance; this records *which commit*) |
 
-## Per-project config — the contract (this is how usage stays consistent)
+Nothing on that path needs a server, which is the point: the catalogue is static HTML and the
+search index is Pagefind, so the registry is readable straight off the machine that computed it.
 
-**A project configures Archeion through the SAME `config.toml` that drives the compute stack — never
+## Optional layers, on top of the same tree
+
+| layer | what it adds | entry point |
+| --- | --- | --- |
+| SQLite | FTS5 search, `body_md` (RAG-portable), record ↔ DataVault-run M:N, versions | `ingest(doc; db, …)` |
+| `web/` (Node) | annotation write-back: memos, discussion, tags, status, a Zettelkasten note layer | `web/README.md` |
+| deploy | push a built tree to a private host over FTPS; creds held by an in-memory agent | `deploy`, `publish`, `initialize` |
+
+They read the same records. **None of them may become load-bearing for "can a human see this
+result?"**: that path is `deposit` → the tree → a browser.
+
+## Per-project config: the contract (this is how usage stays consistent)
+
+**A project configures Archeion through the SAME `config.toml` that drives the compute stack, never
 through anything in this (public) repo.** `[study] project_name` / `outdir` + `[datavault]` already
 say *which* project and runs; an `[archeion]` section adds the registry bits:
 
 ```toml
-[study]
-project_name = "logistic"                # → the Archeion `project` (records are keyed project/source)
-outdir       = "out"
-
 [archeion]
-db          = "${ARCHEION_DB}"           # the ONE shared registry DB (same path for every project)
-content_dir = "data"                     # where ingest stores pages/figures
-category    = "Demonstration/Examples"   # PARA
+root        = "/home/me/work/Vault/Registry"   # the registry tree (or set ARCHEION_REGISTRY)
+category    = "Demonstration/Examples"         # PARA, used by the web app
 tags        = ["chaos", "logistic"]
-deploy      = "deploy.local.toml"        # FTP target (gitignored; secret via ARCHEION_FTP_PASSWORD)
+db          = "${ARCHEION_DB}"                 # optional: the SQLite layer
+deploy      = "deploy.local.toml"              # optional: FTP target (gitignored)
 ```
-
-Usage is then **config-driven and identical across projects** — no kwargs to hand-wire, nothing to
-port between projects:
 
 ```julia
-rep = Pinax.report(vault, recipe; out)                          # gallery + agent.json
-Archeion.ingest("config.toml"; doc=rep.doc, source="phase1")    # project / db / paths from the config
-Archeion.deploy("config.toml")                                  # reads [archeion].deploy
+Pinax.report(vault, recipe; title, out = "report")          # gallery + agent.json
+Archeion.deposit("report"; project, source = "phase1", srcdir = ".",
+                 doc = Pinax.current_document(), config = "config.toml")
 ```
 
-Rules that keep this consistent:
-- **This repo is config-free** — it ships only the engine + the `config/deploy.example.toml` /
-  `config/archeion.example.toml` templates. A project's `[archeion]` lives in the **project** (or gitignored
-  locally); secrets go in env. Nothing project-specific is ever committed here.
-- **`deploy`'s `config` auto-discovers when omitted** (`Archeion.deploy(site)`, no `config=`):
-  explicit arg → `deploy.local.toml` in the CWD → `ENV["ARCHEION_DEPLOY"]` → the machine-global
-  default `~/.archeion/deploy.toml` (`$ARCHEION_HOME/deploy.toml` if set) — see
-  `_resolve_deploy_config` in `src/deploy.jl`. One 0600 file outside every repo can then drive
-  deploy for **every** project on a machine: no per-project `deploy.local.toml`, no password
-  prompt. A discovered machine-global config that isn't ~0600 gets a `@warn` (never a hard
-  error) — perms, not encryption, are what keep it out of reach of anything but the owning user.
-- **One shared registry, partitioned by `project`** (records are `project/source`). Do NOT split into
-  per-project DB files — that fragments the registry and loses the cross-project "have we run this?"
-  value (the LLM-loop memory). Point `[archeion] db` at the same shared DB everywhere (an `ARCHEION_DB`
-  env var); use a separate db only when isolation is a hard requirement.
-- The **config-driven `ingest(config; doc, …)` / `deploy(config)`** are thin wrappers over the existing
-  kwarg `ingest(doc; db, project, source, …)` — they read `[study]`+`[archeion]` and fill the kwargs.
-  (To add once the web-writeback `ingest` refactor settles, so they wrap the final signature.)
+- **This repo is config-free**: it ships the engine plus the `config/*.example.toml` templates. A
+  project's `[archeion]` lives in the project (or gitignored locally); secrets go in env.
+- **One registry root per machine, partitioned by `project`.** Do NOT split into per-project roots:
+  that loses the cross-project "have we run this?" value. Same reasoning for `[archeion] db` when
+  the SQLite layer is in use.
 
-## The two faces again — inside the registry (human vs LLM)
+## Contracts that trip up callers (read this)
 
-The same human↔LLM duality runs through Archeion:
-- **Human → the web app** (Node): browse, FTS5 search, pin / favorite / importance, memos &
-  discussion, tags / status, PARA & Zettelkasten **notes** (markdown with `[[record]]` mentions +
-  `![[figure]]` embeds; **pin** one → a curated advisor page at `/show/:id`). Where a human
-  **confirms** a result; `deploy` closes the loop.
-- **LLM → `body_md`** (RAG-portable, the source of truth): clean per-record Markdown, directly
-  embeddable — so the registry doubles as the LLM loop's **memory** ("have we swept this before?"
-  across all past runs).
-
-## Contracts that trip up callers — read this
-
-- **Content vs annotation split.** Content (figures, provenance, `body_md`, the runs it used) is
-  **immutable, ingest-owned**; annotation (memos, comments, tags, status, favorite, **notes**) is
-  **mutable, app-owned**. **Re-ingest is idempotent and never touches annotations** — that split is
-  what makes re-running ingest safe.
-- **A `record` = one Pinax generation-source** (the parent render → one rendered artifact), **M:N**
-  to DataVault `runs` (a record may compare/render 1+ runs). It is NOT a DataVault run.
-- **`body_md` is RAG-portable** — keep it clean per-record Markdown ("port the DB as-is"); the HTML
-  is derived, the Markdown is the source of truth.
-- Julia writes the DB + figures; Node only reads them (and writes its own annotation tables). Don't
-  cross the contract.
+- **`Pinax.report` does NOT return the doc.** It returns `(; gallery, agent, n)`; the document comes
+  from `Pinax.current_document()` after the render. A `doc=rep.doc` will `ErrorException`.
+- **A deposit owns only what it wrote.** `.deposit.toml` lists the last deposit's files; a re-deposit
+  prunes exactly the entries that this render no longer produces and touches nothing else. Never
+  `rm -rf` a record directory: that is where the sidecars live.
+- **An untitled record is refused.** `deposit` raises unless `title` (or `doc.meta.title`) is
+  non-empty, because every card in the index is labelled by it and `Pinax.render` leaves it empty
+  unless asked. This is a guard, not a nicety: an untitled record is indistinguishable in the
+  catalogue, and `<title>Pinax gallery</title>` is what the browser tab shows.
+- **A dirty tree is recorded, not hidden.** `git_dirty` reaches `record.toml` AND the index card
+  (`@abc1234+dirty`), because a commit that does not describe the tree that ran is worse than no
+  commit. `strict = true` refuses instead.
+- **Heavy data is referenced, never copied.** `data_keys` holds DataVault keys; the raw arrays stay
+  in the vault. A registry that copies data cannot be kept forever.
+- **Content vs annotation split (SQLite layer).** Content (figures, provenance, `body_md`, runs) is
+  ingest-owned and immutable; annotation (memos, comments, tags, status) is app-owned and mutable.
+  **Re-ingest is idempotent and never touches annotations.**
+- **`ingest` rewrites the pages it stores.** `_store_pages` clears its destination and injects
+  `/inject.js` + `/annot.js` at absolute paths, so those pages only work under the Node app. That is
+  why the SQLite layer has its own page store and does not write into the registry tree.
+- **A `record` = one Pinax generation-source** (one rendered artifact), **M:N** to DataVault `runs`.
+  It is NOT a DataVault run.
 
 ## Where to look for usage
 
-- `web/README.md` — the two-halves split, the data contract, **the pages/routes + the note layer**, deploy (panza daemon / Lolipop CGI).
-- `notes/DB/DESIGN.md` (gitignored) — schema rationale (record/runs M:N, content/annotation, FTS).
-- `src/ingest.jl` / `src/deploy.jl` — the ingest + deploy seams; `web/db/schema.sql` — the contract.
+- `README.md`: the tree, the quickstart, the optional layers.
+- `test/test_registry.jl`: the deposit contract as executable claims (sidecar survival, pruning,
+  refusals, provenance).
+- `web/README.md`: the Node half, pages/routes, the note layer, deploy (daemon / CGI).
+- `src/registry.jl` (tree) · `src/ingest.jl` (SQLite) · `web/db/schema.sql` (the Julia↔Node contract).
 
 ## Invariants when changing this package
 
-- **One shared DB + one content folder** → cross-project search / aggregation; re-ingest must stay
-  idempotent and **preserve all annotations**.
-- **The project key is the canonical `slug(project)`** — ingest normalizes `records.project` /
-  `projects.name` to the SAME slug as `records.id`, because the viewer keys every project page /
-  sidebar / PARA filing off that string. Storing a raw name would let a spelling drift ("Logistic" vs
-  "logistic") split a project page and **orphan its app-owned PARA filing**. Never store a raw project
-  name; the viewer only ever sees slugs.
-- The SQLite schema is the **Julia↔Node contract** — evolve `web/db/schema.sql`, the Julia writer,
-  and the Node reader **together**.
-- `body_md` stays clean and portable (RAG). Deploy stays portable (daemon ⇄ CGI); don't hardwire a host.
+- **The index is DERIVED from the tree.** `read_records` walks for `record.toml`; anything that
+  needs a separate list of records has broken the property that another tool can drop a record in.
+- **Only files a previous deposit wrote may be removed by a deposit.** If you add a path the deposit
+  writes, it goes through the manifest, or a sidecar becomes collateral.
+- **`record.toml` stays the only parsed file**, and stays readable by a human with `cat`. Fields are
+  added with defaults so an older record still reads (see `read_record`).
+- **The project key is the canonical `_slug(project)`**: the same slug the record id uses, because
+  the viewer keys every project page off that string. A raw name would let a spelling drift split a
+  project page and orphan its app-owned PARA filing.
+- The SQLite schema is the **Julia↔Node contract**: evolve `web/db/schema.sql`, the Julia writer
+  and the Node reader together. `body_md` stays clean and portable (RAG). Deploy stays portable
+  (daemon ⇄ CGI); don't hardwire a host.

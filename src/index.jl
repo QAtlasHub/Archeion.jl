@@ -17,7 +17,11 @@ function build_index(
         meta = String[]
         r.bookmark && push!(meta, "★")
         isempty(r.tags) || push!(meta, join(r.tags, " · "))
-        r.git_commit == "unknown" || push!(meta, "@" * first(r.git_commit, 7))
+        if r.git_commit != "unknown"
+            # A dirty capture means the commit does NOT describe the tree that ran; say so on
+            # the card, where the number is read, rather than only in `record.toml`.
+            push!(meta, "@" * first(r.git_commit, 7) * (r.git_dirty ? "+dirty" : ""))
+        end
         return (;
             title=r.title,
             href=r.gallery,
