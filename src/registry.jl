@@ -55,9 +55,7 @@ Returns an empty vector when `root` does not exist yet.
 """
 function read_records(root::AbstractString=registry_root())
     recs = Record[]
-    isdir(root) || return recs
-    for (dir, _, files) in walkdir(root)
-        "record.toml" in files || continue
+    for dir in record_dirs(root)
         push!(recs, read_record(dir))
     end
     sort!(recs; by=r -> (r.date, r.id), rev=true)
@@ -65,12 +63,35 @@ function read_records(root::AbstractString=registry_root())
 end
 
 """
+    record_dirs(root=registry_root()) -> Vector{String}
+
+Absolute path of every record directory under `root`, sorted. A record is any directory holding a
+`record.toml`; this is what [`read_records`](@ref) walks, exposed separately because a caller that
+needs the directory (to reach `agent/agent.json`, `repro/`, or a figure) cannot recover it from a
+[`Record`](@ref).
+"""
+function record_dirs(root::AbstractString=registry_root())
+    dirs = String[]
+    isdir(root) || return dirs
+    for (dir, _, files) in walkdir(root)
+        "record.toml" in files && push!(dirs, dir)
+    end
+    return sort!(dirs)
+end
+
+"""
     reindex(root=registry_root(); title="", search=false) -> path
 
-Rebuild `root/index.html` from the records currently on disk and return its path. The title
-defaults to the registry's declared name ([`registry_info`](@ref)), or to `"Archeion"` when the
-root is not a declared registry. With `search=true`, refresh the Pagefind index too
-([`add_search`](@ref)).
+Rebuild the registry's two faces from the records currently on disk, and return the path of the
+human one:
+
+* `root/index.html`, the dashboard: a card per record, over a strip of the registry's own state
+  (how many records, how many cannot be reproduced, how many carry no machine face);
+* `root/index.json`, the [`digest`](@ref): the same content as data, so a program reads the whole
+  registry once instead of opening every record.
+
+The title defaults to the registry's declared name ([`registry_info`](@ref)). With `search=true`,
+refresh the Pagefind index too ([`add_search`](@ref)).
 
 Idempotent and cheap: it reads the `record.toml` files and re-renders one page. Call it after
 anything changes the tree, including a record you added by hand.
@@ -80,10 +101,11 @@ function reindex(
 )
     # A catalogue titled "Archeion" tells a reader which tool made it, not which registry they are
     # looking at; the declared name does, when there is one.
-    if isempty(title)
-        title = is_registry(root) ? registry_info(root).name : "Archeion"
-    end
-    path = build_index(read_records(root); out=root, title=title)
+    dg = digest(root)
+    isempty(title) || (dg["registry"]["name"] = title)
+    mkpath(root)
+    write(joinpath(root, "index.json"), JSON3.write(dg))
+    path = build_dashboard(dg; out=root)
     search && add_search(root)
     return path
 end

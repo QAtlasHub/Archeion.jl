@@ -8,6 +8,7 @@ module Archeion
 # unified, searchable view, and adds the env/code reproducibility Pinax/DataVault don't.
 
 using TOML: TOML
+using JSON3: JSON3
 using Dates: Dates
 using Markdown: Markdown
 using LibGit2: LibGit2
@@ -26,6 +27,7 @@ include("search.jl")     # Pagefind full-text search over the assembled site
 include("aggregate.jl")  # cross-project discovery over DataVault outdirs ("Vault of DataVaults")
 include("registry.jl")   # the registry as a directory tree: record.toml is the only parsed file
 include("registry_repo.jl") # the registry as a git repo: Archeion.toml identity, commit, sync
+include("digest.jl")     # the registry's machine face: index.json, and the dashboard built from it
 include("pages.jl")      # the public face: a public registry published on its gh-pages branch
 include("ingest.jl")     # records -> web/db/archeion.db (SQLite; body_md = RAG-portable source)
 include("read.jl")       # read the app-owned annotation layer back (comments/tags/status) -> LLM
@@ -39,7 +41,8 @@ export ReproBundle, capture_repro
 export Record, write_record, read_record
 export build_index, add_search
 export master_ledger, records_from_outdirs, discover
-export registry_root, read_records, reindex, deposit
+export registry_root, read_records, record_dirs, reindex, deposit
+export digest, build_dashboard
 export create_registry, registry_info, is_registry, sync
 export publish_pages, pages_status, remote_slug
 export ingest
