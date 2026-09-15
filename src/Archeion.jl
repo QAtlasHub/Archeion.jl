@@ -25,6 +25,7 @@ include("index.jl")      # records -> cross-run index, via Pinax.contents
 include("search.jl")     # Pagefind full-text search over the assembled site
 include("aggregate.jl")  # cross-project discovery over DataVault outdirs ("Vault of DataVaults")
 include("registry.jl")   # the registry as a directory tree: record.toml is the only parsed file
+include("registry_repo.jl") # the registry as a git repo: Archeion.toml identity, commit, sync
 include("ingest.jl")     # records -> web/db/archeion.db (SQLite; body_md = RAG-portable source)
 include("read.jl")       # read the app-owned annotation layer back (comments/tags/status) -> LLM
 include("deploy.jl")     # publish the built site privately over FTPS (Lolipop) + Basic auth
@@ -38,6 +39,7 @@ export Record, write_record, read_record
 export build_index, add_search
 export master_ledger, records_from_outdirs, discover
 export registry_root, read_records, reindex, deposit
+export create_registry, registry_info, is_registry, sync
 export ingest
 export record_comments,
     record_tags,

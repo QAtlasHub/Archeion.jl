@@ -27,6 +27,9 @@ See [`../CLAUDE.md`](../CLAUDE.md) for the whole workflow.
 | `reindex(root; search)` | rebuild `index.html` (+ Pagefind) from the tree |
 | `registry_root(; root, config)` | arg → `[archeion] root` → `ENV["ARCHEION_REGISTRY"]` → `~/registry` |
 | `capture_repro(srcdir, dest; strict)` | env/code provenance (Pinax records *figure* provenance; this records *which commit*) |
+| `create_registry(root; name, repo)` | declare a registry: `Archeion.toml` identity + a git repo + `origin` |
+| `registry_info(root)` / `is_registry(root)` | read that identity (raises when the directory was never declared one) |
+| `sync(root; remote, pull, push)` | `git pull --rebase` then `git push`, setting the upstream on the first push |
 
 Nothing on that path needs a server, which is the point: the catalogue is static HTML and the
 search index is Pagefind, so the registry is readable straight off the machine that computed it.
@@ -83,6 +86,14 @@ Archeion.deposit("report"; project, source = "phase1", srcdir = ".",
 - **A dirty tree is recorded, not hidden.** `git_dirty` reaches `record.toml` AND the index card
   (`@abc1234+dirty`), because a commit that does not describe the tree that ran is worse than no
   commit. `strict = true` refuses instead.
+- **Visibility is a property of the REGISTRY, not of a record.** A private registry is a private
+  repo (no Pages on this plan, read the clone locally); a public registry is a public repo whose
+  `gh-pages` serves the catalogue. Publishing means depositing into the public registry. There is
+  deliberately no per-record `public` flag: a flag that was never set is how a leak happens.
+- **A deposit into a git-backed registry commits, by explicit path.** Never `git add -A` here: a
+  registry is shared, and a sweep would carry another session's half-written deposit. An unchanged
+  re-deposit stages nothing and reports `commit = ""` instead of failing; a re-deposit with the
+  default `date` always changes `record.toml`, because rendering again IS a new event.
 - **Heavy data is referenced, never copied.** `data_keys` holds DataVault keys; the raw arrays stay
   in the vault. A registry that copies data cannot be kept forever.
 - **Content vs annotation split (SQLite layer).** Content (figures, provenance, `body_md`, runs) is
