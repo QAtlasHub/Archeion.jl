@@ -14,6 +14,7 @@ Base.@kwdef struct Record
     bookmark::Bool = false
     thumbnail::Union{Nothing,String} = nothing
     git_commit::String = "unknown"
+    git_dirty::Bool = false                  # uncommitted changes when the repro was captured
     julia_version::String = string(VERSION)
     data_keys::Vector{String} = String[]     # DataVault keys (references, not the data)
 end
@@ -35,6 +36,7 @@ function write_record(rec::Record, dir::AbstractString)
         "tags" => rec.tags,
         "bookmark" => rec.bookmark,
         "git_commit" => rec.git_commit,
+        "git_dirty" => rec.git_dirty,
         "julia_version" => rec.julia_version,
         "data_keys" => rec.data_keys,
     )
@@ -70,6 +72,7 @@ function read_record(dir::AbstractString)
         bookmark=get(d, "bookmark", false),
         thumbnail=get(d, "thumbnail", nothing),
         git_commit=get(d, "git_commit", "unknown"),
+        git_dirty=get(d, "git_dirty", false),
         julia_version=get(d, "julia_version", ""),
         data_keys=String.(get(d, "data_keys", String[])),
     )
