@@ -1,0 +1,12 @@
+aqua	10.504
+test_agent.jl	3.343
+test_aggregate.jl	11.284
+test_archeion.jl	2.709
+test_deploy.jl	1.347
+test_digest.jl	2.233
+test_ingest.jl	8.303
+test_pages.jl	4.146
+test_read.jl	8.659
+test_registry.jl	1.396
+test_registry_repo.jl	3.443
+test_transport.jl	0.137
