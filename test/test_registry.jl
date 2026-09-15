@@ -221,3 +221,48 @@ end
         @test !isfile(joinpath(reg, "p", "s", "record.toml"))
     end
 end
+
+if Sys.which("git") !== nothing
+    @testset "the env that ran is snapshotted, not the tree that happens to hold the code" begin
+        # A study whose render has its own environment: the repo root's Project.toml is NOT the one
+        # that ran, and pinning it would claim an environment that never did.
+        src = mktempdir()
+        run(`git -C $src init -q`)
+        run(`git -C $src config user.email t@example.com`)
+        run(`git -C $src config user.name tester`)
+        write(joinpath(src, "Project.toml"), "name = \"Study\"\n")
+        write(joinpath(src, "Manifest.toml"), "# the acquisition env\n")
+        mkpath(joinpath(src, "report"))
+        write(joinpath(src, "report", "Project.toml"), "name = \"Render\"\n")
+        write(joinpath(src, "report", "Manifest.toml"), "# the render env\n")
+        run(`git -C $src add -A`)
+        run(`git -C $src commit -q -m init`)
+
+        root = mktempdir()
+        res = Archeion.deposit(
+            _built();
+            project="p",
+            source="s",
+            title="T",
+            root=root,
+            srcdir=src,
+            env=joinpath(src, "report"),
+        )
+        repro = joinpath(res.dir, "repro")
+        @test read(joinpath(repro, "Manifest.toml"), String) == "# the render env\n"
+        @test occursin("Render", read(joinpath(repro, "Project.toml"), String))
+        # and the recipe names it, so a reader instantiates the env that ran
+        @test occursin("--project=report", read(joinpath(repro, "reproduce.sh"), String))
+
+        # the default still snapshots the source tree itself
+        plain = mktempdir()
+        r2 = Archeion.deposit(
+            _built(); project="p", source="s", title="T", root=plain, srcdir=src
+        )
+        @test read(joinpath(r2.dir, "repro", "Manifest.toml"), String) ==
+            "# the acquisition env\n"
+        @test occursin(
+            "--project=.", read(joinpath(r2.dir, "repro", "reproduce.sh"), String)
+        )
+    end
+end
