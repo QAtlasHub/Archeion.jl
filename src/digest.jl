@@ -188,6 +188,8 @@ end
 # is in it, and which commit it came from.
 function _entry_meta(e::AbstractDict)
     bits = String[]
+    pr = String(get(e, "project", ""))
+    isempty(pr) || push!(bits, pr)
     d = String(get(e, "date", ""))
     isempty(d) || push!(bits, first(d, 10))
     st = String(get(e, "status", ""))

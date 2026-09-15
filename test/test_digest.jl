@@ -119,6 +119,7 @@ end
     @test occursin("A record", html)
     @test occursin("One", html)                      # section titles ride on the card
     @test occursin("no agent.json", html)            # and the gap is said on the card that has it
+    @test occursin("p  ·  2026-09-15", html)         # which project it belongs to leads the line
 
     # the machine face is written beside the human one, and says the same thing
     js = joinpath(root, "index.json")
