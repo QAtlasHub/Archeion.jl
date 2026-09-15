@@ -27,7 +27,7 @@ end
 
 # Run a git command in `dir`, returning (ok, output). Never throws on a non-zero exit: callers
 # decide whether a failure is fatal, because "nothing to commit" is a normal outcome here.
-function _git_try(dir::AbstractString, args::Vector{String})
+function _git_try(dir::AbstractString, args::AbstractVector{<:AbstractString})
     g = _git()
     g === nothing && return (false, "git not found")
     out = IOBuffer()

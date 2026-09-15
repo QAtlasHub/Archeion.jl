@@ -30,6 +30,8 @@ See [`../CLAUDE.md`](../CLAUDE.md) for the whole workflow.
 | `create_registry(root; name, repo)` | declare a registry: `Archeion.toml` identity + a git repo + `origin` |
 | `registry_info(root)` / `is_registry(root)` | read that identity (raises when the directory was never declared one) |
 | `sync(root; remote, pull, push)` | `git pull --rebase` then `git push`, setting the upstream on the first push |
+| `publish_pages(root; check, search)` | the public face: force-push the registry to `gh-pages`, after asking GitHub whether it will be served |
+| `pages_status(slug)` / `remote_slug(root)` | is it private, is Pages on, and what owner/name is this remote |
 
 Nothing on that path needs a server, which is the point: the catalogue is static HTML and the
 search index is Pagefind, so the registry is readable straight off the machine that computed it.
@@ -94,6 +96,12 @@ Archeion.deposit("report"; project, source = "phase1", srcdir = ".",
   registry is shared, and a sweep would carry another session's half-written deposit. An unchanged
   re-deposit stages nothing and reports `commit = ""` instead of failing; a re-deposit with the
   default `date` always changes `record.toml`, because rendering again IS a new event.
+- **A green push is not a served site.** `publish_pages` asks GitHub (`gh api repos/<slug>/pages`)
+  before pushing, because pushing to `gh-pages` succeeds whether or not Pages is enabled. Four
+  QAtlasHub repos once had `documenter/deploy` passing on every PR while `GET /pages` returned 404.
+- **A remote URL never reaches an error message or a log.** A push URL can carry a token
+  (`https://x-access-token:<token>@github.com/...`); errors name the remote, and git's output goes
+  through `_mask`.
 - **Heavy data is referenced, never copied.** `data_keys` holds DataVault keys; the raw arrays stay
   in the vault. A registry that copies data cannot be kept forever.
 - **Content vs annotation split (SQLite layer).** Content (figures, provenance, `body_md`, runs) is
