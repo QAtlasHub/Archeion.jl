@@ -210,12 +210,18 @@ end
     build_dashboard(dg; out, title="") -> path
 
 Render the registry dashboard from a [`digest`](@ref) to `out/index.html`, and return its path.
-Cards are the records; the strip above them is the registry's state.
+Cards are the records, carrying their tags as chips and as what the filter bar matches on; the strip
+above them is the registry's state.
+
+`search` mounts the Pagefind UI, and [`reindex`](@ref) passes it only once the index has actually
+been built: a search box over an index that does not exist is worse than no box.
 
 Separate from [`build_index`](@ref), which renders a plain card index from `Record`s alone (what
 `discover` produces over DataVault outdirs, where there is no `agent.json` to read).
 """
-function build_dashboard(dg::AbstractDict; out::AbstractString, title::AbstractString="")
+function build_dashboard(
+    dg::AbstractDict; out::AbstractString, title::AbstractString="", search::Bool=false
+)
     isempty(title) && (title = String(get(get(dg, "registry", Dict()), "name", "Archeion")))
     t = get(dg, "totals", Dict{String,Any}())
     entries = map(get(dg, "records", ())) do e
@@ -227,6 +233,7 @@ function build_dashboard(dg::AbstractDict; out::AbstractString, title::AbstractS
             thumbnail=get(e, "thumbnail", nothing),
             meta=_entry_meta(e),
             items=items,
+            tags=String.(get(e, "tags", String[])),
         )
     end
     stats = [
@@ -236,5 +243,7 @@ function build_dashboard(dg::AbstractDict; out::AbstractString, title::AbstractS
         "not reproducible" => get(t, "dirty", 0) + get(t, "unknown_commit", 0),
         "no machine face" => get(t, "without_agent", 0),
     ]
-    return Pinax.contents(entries; out=out, title=title, level=:rich, stats=stats)
+    return Pinax.contents(
+        entries; out=out, title=title, level=:rich, stats=stats, search=search
+    )
 end

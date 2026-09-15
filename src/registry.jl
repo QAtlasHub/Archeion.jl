@@ -90,14 +90,18 @@ human one:
 * `root/index.json`, the [`digest`](@ref): the same content as data, so a program reads the whole
   registry once instead of opening every record.
 
-The title defaults to the registry's declared name ([`registry_info`](@ref)). With `search=true`,
-refresh the Pagefind index too ([`add_search`](@ref)).
+The title defaults to the registry's declared name ([`registry_info`](@ref)).
+
+`search` (on by default) refreshes the Pagefind index ([`add_search`](@ref)) and mounts its UI on
+the dashboard, so a registry read from a clone searches exactly like the published one. Where `npx`
+is unavailable the index is not built, `add_search` warns, and the dashboard is rendered WITHOUT a
+search box rather than with one that can find nothing.
 
 Idempotent and cheap: it reads the `record.toml` files and re-renders one page. Call it after
 anything changes the tree, including a record you added by hand.
 """
 function reindex(
-    root::AbstractString=registry_root(); title::AbstractString="", search::Bool=false
+    root::AbstractString=registry_root(); title::AbstractString="", search::Bool=true
 )
     # A catalogue titled "Archeion" tells a reader which tool made it, not which registry they are
     # looking at; the declared name does, when there is one.
@@ -105,8 +109,14 @@ function reindex(
     isempty(title) || (dg["registry"]["name"] = title)
     mkpath(root)
     write(joinpath(root, "index.json"), JSON3.write(dg))
+
+    # Rendered, then indexed, then rendered again. Pagefind reads the pages that are on disk, and
+    # the search box may only appear once the index it needs actually exists — `add_search` returns
+    # whether it does, and skips with a warning where `npx` is missing.
     path = build_dashboard(dg; out=root)
-    search && add_search(root)
+    if search && add_search(root)
+        path = build_dashboard(dg; out=root, search=true)
+    end
     return path
 end
 

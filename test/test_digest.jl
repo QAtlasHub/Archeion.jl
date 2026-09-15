@@ -129,3 +129,23 @@ end
     @test parsed["totals"]["without_agent"] == 1
     @test length(parsed["records"]) == 2
 end
+
+@testset "the search box appears only once there is an index to search" begin
+    root = mktempdir()
+    Archeion.create_registry(root; name="R", git=false)
+    _record(root, "p/s"; title="A record", agent=_agent_json())
+
+    # asked not to build one: no box, and nothing on disk to mislead
+    plain = read(Archeion.reindex(root; search=false), String)
+    @test !occursin("pagefind/pagefind-ui.js", plain)
+    @test !isdir(joinpath(root, "pagefind"))
+
+    if Sys.which("npx") === nothing
+        @info "npx not found — skipping the half of this that needs Pagefind"
+    else
+        html = read(Archeion.reindex(root), String)          # search = true by default
+        @test isfile(joinpath(root, "pagefind", "pagefind-ui.js"))
+        @test occursin("pagefind/pagefind-ui.js", html)
+        @test occursin("id=\"pinax-search\"", html)
+    end
+end

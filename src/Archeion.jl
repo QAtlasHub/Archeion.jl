@@ -28,6 +28,7 @@ include("aggregate.jl")  # cross-project discovery over DataVault outdirs ("Vaul
 include("registry.jl")   # the registry as a directory tree: record.toml is the only parsed file
 include("registry_repo.jl") # the registry as a git repo: Archeion.toml identity, commit, sync
 include("digest.jl")     # the registry's machine face: index.json, and the dashboard built from it
+include("retag.jl")      # tags after the fact: a judgement that arrives later than the result
 include("pages.jl")      # the public face: a public registry published on its gh-pages branch
 include("ingest.jl")     # records -> web/db/archeion.db (SQLite; body_md = RAG-portable source)
 include("read.jl")       # read the app-owned annotation layer back (comments/tags/status) -> LLM
@@ -43,6 +44,7 @@ export build_index, add_search
 export master_ledger, records_from_outdirs, discover
 export registry_root, read_records, record_dirs, reindex, deposit
 export digest, build_dashboard
+export tag!, untag!
 export create_registry, registry_info, is_registry, sync
 export publish_pages, pages_status, remote_slug
 export ingest
