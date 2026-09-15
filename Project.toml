@@ -1,12 +1,13 @@
 name = "Archeion"
 uuid = "4f7774e9-efb7-42d6-b735-122dcc7ea7b8"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["sota shimozono <shimozono-sota631@g.ecc.u-tokyo.ac.jp>"]
 
 [deps]
 DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
 DataVault = "23f5f8f6-b4da-40ee-8c72-c53b6c5de94f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LibGit2 = "76f85450-5226-5b5a-8eaa-529ad045b433"
 Markdown = "d6f4376e-aef5-505a-96c1-9c027394607a"
 ParamIO = "938a3ac2-d340-473c-bcf1-88af577e4ccf"
@@ -34,6 +35,7 @@ Aqua = "0.8"
 DBInterface = "2"
 DataVault = "0.7, 0.8"
 Dates = "1"
+JSON3 = "1"
 LibGit2 = "1"
 Markdown = "1"
 ParamIO = "0.3, 0.4"
