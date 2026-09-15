@@ -150,6 +150,11 @@ without one cannot be told from any other, and `Pinax.render` leaves it empty un
 
 Heavy data is NOT copied: reference it through `data_keys` (DataVault keys), the same way
 [`Record`](@ref) does.
+
+When the registry root is a git repository, the deposit is committed (the record directory and the
+index, by explicit path, never `git add -A`) and the short SHA comes back as `commit`. Re-depositing
+an unchanged render stages nothing and returns `""` rather than failing. `commit = false` writes the
+files and leaves staging alone.
 """
 function deposit(
     dir::AbstractString;
@@ -168,6 +173,7 @@ function deposit(
     date::AbstractString="",
     index::Bool=true,
     search::Bool=false,
+    commit::Bool=true,
 )
     isdir(dir) || error("deposit: `$(dir)` is not a directory")
     isempty(title) && doc !== nothing && (title = String(doc.meta.title))
@@ -191,11 +197,14 @@ function deposit(
     pruned = _prune_previous(recdir, written)
     _write_deposit_manifest(recdir, written)
 
-    commit, dirty = "unknown", false
+    # Named `gitsha`, not `commit`: the `commit` kwarg is a Bool, and a local of the same name
+    # would shadow it (the kind of rebinding that shows up as `non-boolean used in boolean
+    # context` three statements later).
+    gitsha, dirty = "unknown", false
     if !isempty(srcdir)
         cfgpath = config isa AbstractString ? String(config) : nothing
         bundle = capture_repro(srcdir, recdir; config=cfgpath, strict=strict)
-        commit, dirty = bundle.git_commit, bundle.git_dirty
+        gitsha, dirty = bundle.git_commit, bundle.git_dirty
     end
 
     rec = Record(;
@@ -207,12 +216,19 @@ function deposit(
         date=isempty(date) ? string(Dates.now()) : date,
         tags=String.(tags),
         thumbnail=thumbnail === nothing ? nothing : String(thumbnail),
-        git_commit=commit,
+        git_commit=gitsha,
         git_dirty=dirty,
         data_keys=String.(data_keys),
     )
     write_record(rec, recdir)
 
     idx = index ? reindex(reg; search=search) : ""
-    return (; dir=recdir, record=rec, index=idx, pruned=pruned)
+
+    sha = ""
+    if commit
+        paths = [relpath(recdir, reg)]
+        isempty(idx) || push!(paths, relpath(idx, reg))
+        sha = _commit_deposit(reg, paths, "deposit $(rec.id): $(rec.title)")
+    end
+    return (; dir=recdir, record=rec, index=idx, pruned=pruned, commit=sha)
 end

@@ -40,6 +40,27 @@ Nothing here needs a server: the catalogue is static HTML and the search index i
 [Pagefind](https://pagefind.app/), so the registry can be read straight off the machine that
 computed it.
 
+## A registry is a repository
+
+One repo per registry, cloned wherever it is read, brought up to date with `git pull`, exactly as a
+Julia registry works. `Archeion.toml` at the root is its identity; the name is deliberately not
+`Registry.toml`, so a clone sitting beside real registries cannot be mis-added to Pkg.
+
+```julia
+Archeion.create_registry("/path/to/Registry"; name = "Lab", repo = "git@github.com:org/Registry.git")
+Archeion.deposit("report"; project = "…", source = "phase1", root = "/path/to/Registry")
+Archeion.sync("/path/to/Registry")        # pull --rebase, then push (sets the upstream on the first)
+```
+
+A deposit into a git-backed registry is a commit, staging the record directory and the index by
+explicit path, so the history answers "what did this look like on that date". Replicating a registry
+is `git clone`: no server, no export step.
+
+**Visibility is a property of the registry, not of a record.** A private registry is a private repo:
+read the clone locally, no site. A public registry is a public repo, and its `gh-pages` branch serves
+the catalogue. Publishing a result means depositing it into the public registry, so nothing can leak
+through a per-record flag that was never set.
+
 ## Quickstart
 
 ```julia
