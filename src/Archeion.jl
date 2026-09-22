@@ -9,6 +9,7 @@ package is one implementation of it, depending on the standard library only.
 - [`build`](@ref) renders it as a static site with relative links only.
 - [`new_binding`](@ref) and [`deposit`](@ref) add a record, then revisions of it.
 - [`doc_fields`](@ref) (with Pinax loaded) takes what an entry needs from a rendered document.
+- [`provenance_from`](@ref) (with DataVault loaded) takes per-point provenance from a vault.
 
 From a shell: `julia -m Archeion validate [root]`, `julia -m Archeion build [root] [out]`.
 """
@@ -21,6 +22,7 @@ using TOML
 
 include("validate.jl")
 include("build.jl")
+include("provenance.jl")
 include("deposit.jl")
 
 """
@@ -32,8 +34,17 @@ loaded, and reads the document that was rendered, never its output.
 """
 function doc_fields end
 
+"""
+    provenance_from(vault, report; allow_mismatch = false, source_contents = true) -> NamedTuple
+
+What [`deposit`](@ref)'s `provenance` needs, from a DataVault `vault` and the result of
+`Pinax.report`: the points it read, where the vault keeps its observations and source snapshots,
+and the render observation. The method for a `DataVault.Vault` is defined when DataVault is loaded.
+"""
+function provenance_from end
+
 export deposit, new_binding
-public validate, build, anchors, doc_fields, main
+public validate, build, anchors, doc_fields, provenance_from, main
 
 function usage(io=stderr)
     println(io, "usage: julia -m Archeion validate [root]")

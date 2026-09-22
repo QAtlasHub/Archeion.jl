@@ -46,6 +46,8 @@ records/<YYYY>/<YYYY-MM-DD>-<slug>-<record-id>/
         SHA256SUMS
         gallery/            the human face (HTML, figures)
         agent/              the machine face (agent.json, agent.md, figure data)
+        provenance.toml     per-point provenance: a summary (optional, §5.5)
+        provenance/         its point table
         repro/              whatever was captured to rebuild it (optional)
     events/<YYYYMMDDTHHMMSSZ>-<origin>-<key>.toml
 ```
@@ -137,12 +139,57 @@ observation, or code that is not on disk at all (a function defined in a REPL, a
 another process). `"run-start"`, `"completion"` and `"publish"` are three moments of observation,
 not a scale of strength, and `source` never claims that the observed commit produced the result.
 That claim, and the provenance of individual parameter points (which point was computed by which
-code, and which bytes the report read), is part of §10 until the upstream packages can supply it.
+code, and which bytes the report read), is §5.5.
 
 ### 5.4 `doc.status`
 
 `"final"` means the author presents this revision's claims, at the time of freezing, as correct to a
 third party. `"trial"` means everything else. Withdrawal is not a status; it is an event.
+
+### 5.5 Per-point provenance
+
+A revision may hold `provenance.toml`, which says for each parameter point the report used which
+bytes it read and what the computation recorded when it wrote them. Its point table is a separate
+file, `provenance/points.tsv`, because a report can use tens of thousands of points:
+
+```text
+key	file	read_sha256	result_sha256	observation	completed_at
+```
+
+- One row per point, sorted by `key`, keys unique; cells are escaped with Julia's `escape_string`,
+  so none holds a tab or a newline. `read_sha256` is the digest of the bytes the report read (read
+  once, hashed, then loaded from the same copy); `result_sha256` is what the computation recorded
+  when it wrote the file; `observation` is the token of the source observation the computing
+  process made. A value that was not recorded is `unknown`.
+- `provenance.toml`:
+
+| Field | Meaning |
+|---|---|
+| `schema` | `"registry.provenance/1"` |
+| `points`, `points_file`, `points_digest` | the row count, `"provenance/points.tsv"`, and `"sha256:<hex>"` of that file |
+| `counts` | `read_matches_result`, `read_differs_from_result`, `result_unknown`: the rows by how `read_sha256` compares with `result_sha256` |
+| `bindings` | the rows by the `binding` of the observation they name; `unknown` for a row whose observation is `unknown` or absent |
+| `observations`, `missing_observations` | the tokens the rows (and the render) name that are, and are not, held in the revision |
+| `render_observation` | the token of the rendering process's own observation, when it made one |
+| `allow_mismatch`, `source_contents` | whether rows that read other bytes than were recorded were let in, and whether source contents were copied |
+
+- Each observation is held at `repro/observations/<token>.toml`, as the data store wrote it. Its
+  `source` names a snapshot `src1-<hex>`, where `<hex>` is the SHA-256 of the snapshot's
+  `files.tsv` (an inventory of the source roots the process could see); the snapshot is held at
+  `repro/sources/<first 32 of hex>/{files.tsv,state.toml}`, and the contents of inventoried files,
+  when kept, at `repro/blobs/<first 32 of the file's SHA-256>`. Paths use 32 hex (128 bits) to stay
+  within R3; the files keep the full digests, and a checker compares full digests.
+- An observation's `binding` is how far that process's loaded code was checked against its
+  snapshot: `loaded-matches-disk` (every loaded source of the checked roots matched it),
+  `loaded-differs-from-disk`, or `unverified` (with `binding_reasons`). An observation is a disk
+  state; only its binding speaks about the code that ran, and `unverified` claims nothing.
+- A depositor refuses a row whose `read_sha256` differs from its `result_sha256` unless told to let
+  it in, which is then recorded as `allow_mismatch = true`. A validator requires the summary to match
+  the table, every named token to be held or listed as missing, every binding to be one of the three
+  values, and every snapshot to hash to its id; it warns on rows that read other bytes and on
+  missing observations.
+- When `provenance.toml` exists, `repro/observations/`, `repro/sources/` and `repro/blobs/` are its
+  own.
 
 ## 6. Preservation
 
@@ -192,11 +239,8 @@ the catalogue, search indexes, the current revision of a record, counts.
 - **Experiments and notes.** Whether a lab notebook is a separate object or a record of another kind.
 - **Identifier length.** Eight characters (40 bits) is readable; a validator rejects collisions. A
   full UUID is the alternative.
-- **Per-point provenance.** A table, kept outside `entry.toml`, from each parameter point to the
-  digest of the result bytes the report read and to an observation of the source the computing
-  process could see. The observation and its **binding** to the code that ran are separate claims:
-  the binding is `unverified` unless loaded sources were checked against the observation, or the
-  process was started from it. Needs DataVault, SweepRunner and Pinax to record these.
+- **Starting processes from a snapshot.** A fourth binding, `launched-from-snapshot`, for a
+  process whose code was loaded from a held snapshot rather than checked against one (§5.5).
 - **Source capture for a dirty tree.** A git commit object built from a temporary index, or a
   content-addressed tar of declared source roots.
 - **Data references and replicas.** Content digests of the data a revision used, and events that
