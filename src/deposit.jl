@@ -287,9 +287,13 @@ function deposit(
         write(joinpath(incoming, "README.md"), readme(entry))
         provenance === nothing || write_provenance!(incoming; provenance...)
         write_sums(incoming)                              # last: its presence means "complete"
-    catch
-        rm(incoming; recursive=true, force=true)          # nothing half-written is left behind
-        rethrow()
+    catch e
+        try
+            rm(incoming; recursive=true, force=true)      # nothing half-written is left behind
+        catch cleanup
+            @warn "could not remove $incoming" exception = cleanup
+        end
+        rethrow(e)
     end
 
     final = joinpath(revroot, rev)
