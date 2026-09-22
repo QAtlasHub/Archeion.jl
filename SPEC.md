@@ -186,8 +186,9 @@ key	file	read_sha256	result_sha256	observation	completed_at
 - A depositor refuses a row whose `read_sha256` differs from its `result_sha256` unless told to let
   it in, which is then recorded as `allow_mismatch = true`. A validator requires the summary to match
   the table, every named token to be held or listed as missing, every binding to be one of the three
-  values, and every snapshot to hash to its id; it warns on rows that read other bytes and on
-  missing observations.
+  values, and every snapshot to hash to its id; it warns on rows that read other bytes, on
+  missing observations, and on a `loaded-matches-disk` from an observation of
+  `observation_version = 1`, whose check for code defined in a script never fired.
 - When `provenance.toml` exists, `repro/observations/`, `repro/sources/` and `repro/blobs/` are its
   own.
 

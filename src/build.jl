@@ -318,6 +318,20 @@ end
 
 # ── build ─────────────────────────────────────────────────────────────────────────────────────
 
+# What of a revision the site serves: everything a reader opens, not the evidence behind it. The
+# point table and `repro/` (observations, source snapshots and contents) stay in the repository:
+# a table of 80_000 points is 24 MiB per revision, and a site that copied it would carry it once
+# per revision ever deposited. The summary, `provenance.toml`, is served and links nowhere.
+const SITE_SKIP = ("provenance", "repro")
+
+function copy_revision(src, dest)
+    mkpath(dest)
+    for name in readdir(src)
+        name in SITE_SKIP && isdir(joinpath(src, name)) && continue
+        cp(joinpath(src, name), joinpath(dest, name))
+    end
+end
+
 function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
     r, _ = validate(root)
     isempty(r.errors) || error(
@@ -336,7 +350,7 @@ function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
         dest = joinpath(out, rec.rel)
         mkpath(joinpath(dest, "revisions"))
         for rev in rec.revs
-            cp(rev.dir, joinpath(dest, "revisions", rev.name))
+            copy_revision(rev.dir, joinpath(dest, "revisions", rev.name))
         end
         write(joinpath(dest, "index.html"), record_page(name, projects, rec))
     end

@@ -7,7 +7,7 @@ using DataVault
 # contents kept), and one observation of it with the given binding.
 const OBS = "obs1-20260922T000000Z-1a2b-0123456789abcdef"
 
-function synthetic_store(; binding="loaded-matches-disk")
+function synthetic_store(; binding="loaded-matches-disk", version=2)
     dir = mktempdir()
     blob = "module P\nend\n"
     bsha = bytes2hex(sha256(blob))
@@ -24,7 +24,8 @@ function synthetic_store(; binding="loaded-matches-disk")
     mkpath(observations)
     write(
         joinpath(observations, "$token.toml"),
-        "token = \"$token\"\nsource = \"$id\"\nbinding = \"$binding\"\nbinding_reasons = []\n",
+        "observation_version = $version\ntoken = \"$token\"\nsource = \"$id\"\n" *
+        "binding = \"$binding\"\nbinding_reasons = []\n",
     )
     return (; dir, observations, sources, token, id, bsha)
 end
@@ -108,6 +109,10 @@ rewrite!(path, f) = write(path, f(read(path, String)))
         Archeion.build(root, site)
         rec = relpath(dirname(dirname(res.dir)), root)
         page = read(joinpath(site, rec, "index.html"), String)
+        served = joinpath(site, relpath(res.dir, root))
+        @test isfile(joinpath(served, "provenance.toml")) &&
+            isdir(joinpath(served, "gallery"))
+        @test !ispath(joinpath(served, "provenance")) && !ispath(joinpath(served, "repro"))
         @test occursin("3 points: 2 read as recorded", page) &&
             occursin("1 unrecorded", page)
         @test occursin("code loaded-matches-disk 2, unknown 1", page)
@@ -148,6 +153,21 @@ end
         @test isempty(r.errors) && mentions(r.warnings, "$other was not available")
         p = TOML.parsefile(joinpath(res.dir, "provenance.toml"))
         @test p["missing_observations"] == [other] && p["bindings"] == Dict("unknown" => 1)
+    end
+end
+
+@testset "provenance: a version-1 match is not taken at its word" begin
+    store = synthetic_store(; version=1)
+    deposited([point("k1", store.token)]; store) do root, res
+        r, _ = Archeion.validate(root)
+        @test isempty(r.errors)
+        @test mentions(
+            r.warnings, "observation version 1 could not see code defined in Main"
+        )
+    end
+    store = synthetic_store(; version=1, binding="unverified")
+    deposited([point("k1", store.token)]; store) do root, res
+        @test isempty(first(Archeion.validate(root)).warnings)
     end
 end
 

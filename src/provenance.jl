@@ -239,6 +239,16 @@ function check_provenance(r, revdir)
         obs = load(r, obs_path)
         obs === nothing && continue
         binding = get(obs, "binding", nothing)
+        # Observation version 1 looked for code defined in Main where Julia records none made at
+        # run time, so its match can hide a script's code (DataVault 0.8.6 fixed the check).
+        get(obs, "observation_version", nothing) == 1 &&
+            binding == "loaded-matches-disk" &&
+            warn!(
+                r,
+                obs_path,
+                "observation version 1 could not see code defined in Main; its " *
+                "`loaded-matches-disk` does not rule out a script's code",
+            )
         binding_of_token[t] = string(binding)
         binding in BINDINGS || err!(
             r,

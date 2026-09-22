@@ -145,7 +145,12 @@ function readme(e)
     return String(take!(io))
 end
 
+# A face is a directory; `Pinax.render` and `Pinax.report` return the file they wrote in it
+# (`index.html`, `agent.json`), so a file stands for its directory.
+face_dir(path) = isfile(path) ? dirname(path) : path
+
 function copy_tree(src, dest)
+    isdir(src) || error("$src is not a directory")
     for (dir, _, files) in walkdir(src), f in files
         f in SKIP && continue
         target = joinpath(dest, relpath(joinpath(dir, f), src))
@@ -269,23 +274,23 @@ function deposit(
     incoming = joinpath(reg, "_incoming", rev)
     ispath(incoming) && error("$incoming exists")
     mkpath(incoming)
-    copy_tree(gallery, joinpath(incoming, "gallery"))
-    copy_tree(agent, joinpath(incoming, "agent"))
-    for (dest, src) in repro
-        mkpath(dirname(joinpath(incoming, "repro", dest)))
-        cp(src, joinpath(incoming, "repro", dest))
-    end
-    open(io -> TOML.print(io, entry; sorted=true), joinpath(incoming, "entry.toml"), "w")
-    write(joinpath(incoming, "README.md"), readme(entry))
-    if provenance !== nothing
-        try
-            write_provenance!(incoming; provenance...)
-        catch
-            rm(incoming; recursive=true, force=true)      # nothing half-written is left behind
-            rethrow()
+    try
+        copy_tree(face_dir(gallery), joinpath(incoming, "gallery"))
+        copy_tree(face_dir(agent), joinpath(incoming, "agent"))
+        for (dest, src) in repro
+            mkpath(dirname(joinpath(incoming, "repro", dest)))
+            cp(src, joinpath(incoming, "repro", dest))
         end
+        open(
+            io -> TOML.print(io, entry; sorted=true), joinpath(incoming, "entry.toml"), "w"
+        )
+        write(joinpath(incoming, "README.md"), readme(entry))
+        provenance === nothing || write_provenance!(incoming; provenance...)
+        write_sums(incoming)                              # last: its presence means "complete"
+    catch
+        rm(incoming; recursive=true, force=true)          # nothing half-written is left behind
+        rethrow()
     end
-    write_sums(incoming)                                  # last: its presence means "complete"
 
     final = joinpath(revroot, rev)
     mkpath(revroot)

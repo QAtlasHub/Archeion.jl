@@ -1,5 +1,36 @@
 # deposit: revisions go in through a binding, and a revision that does not validate never lands.
 
+@testset "deposit: the file a render returns stands for its directory" begin
+    with_git_fixture() do root, binding, src
+        res = deposit(
+            binding;
+            gallery=joinpath(src.gallery, "index.html"),
+            agent=joinpath(src.agent, "agent.json"),
+            doc=DOC,
+            source_repo=root,
+            push=false,
+        )
+        @test isfile(joinpath(res.dir, "gallery", "index.html"))
+        @test isfile(joinpath(res.dir, "agent", "agent.json"))
+        @test isempty(first(Archeion.validate(root)).errors)
+    end
+    with_git_fixture() do root, binding, src
+        e = attempt(
+            () -> deposit(
+                binding;
+                gallery=joinpath(root, "no-such-dir"),
+                agent=src.agent,
+                doc=DOC,
+                source_repo=root,
+                push=false,
+            ),
+        )
+        @test e isa ErrorException && occursin("is not a directory", e.msg)
+        incoming = joinpath(root, "_incoming")
+        @test commits(root) == 1 && (!isdir(incoming) || isempty(readdir(incoming)))
+    end
+end
+
 @testset "deposit" begin
     with_git_fixture() do root, binding, src
         res = deposit(binding; src..., doc=DOC, source_repo=root, push=false)
