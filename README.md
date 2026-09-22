@@ -1,125 +1,53 @@
 # Archeion.jl
 
-[![docs: stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://qatlashub.github.io/Archeion.jl/stable/)
-[![docs: dev](https://img.shields.io/badge/docs-dev-purple.svg)](https://qatlashub.github.io/Archeion.jl/dev/)
-[![Julia](https://img.shields.io/badge/julia-v1.12+-9558b2.svg)](https://julialang.org)
-[![Code Style: Blue](https://img.shields.io/badge/Code%20Style-Blue-4495d1.svg)](https://github.com/invenia/BlueStyle)
-
-<a id="badge-top"></a>
-[![codecov](https://codecov.io/gh/QAtlasHub/Archeion.jl/graph/badge.svg)](https://codecov.io/gh/QAtlasHub/Archeion.jl)
-[![Build Status](https://github.com/QAtlasHub/Archeion.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/QAtlasHub/Archeion.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/main/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-**Archeion** (ἀρχεῖον, *archive*) is an experiment registry: rendered results accumulate in it,
-each one carrying the provenance needed to reproduce it, and the whole thing stays browsable.
-
-## The registry is a directory tree
-
-```
-<root>/                            $ARCHEION_REGISTRY, or [archeion] root, or ~/registry
-  index.html                       the catalogue, rebuilt from the tree
-  pagefind/                        client-side full-text search (optional, no server)
-  <project>/<source>/
-    record.toml                    the ONLY file this package parses
-    repro/                         commit, dirty flag, Project.toml, Manifest.toml, reproduce.sh
-    index.html  assets/            the rendered result, exactly as it was built
-    <anything else>                sidecars: notes, slides, an annotation store, a PDF
-```
-
-Two properties follow from that shape, and they are the reason it is a tree:
-
-- **The index is derived.** `read_records` finds every directory holding a `record.toml`, at any
-  depth, so a record another tool wrote appears in the catalogue without this package knowing
-  that tool exists.
-- **A deposit owns only what it wrote.** Re-rendering a study replaces its files and prunes the
-  ones that render no longer produces. Everything else in the record directory is left alone, so
-  a sidecar cannot be destroyed by a re-render.
-
-Nothing here needs a server: the catalogue is static HTML and the search index is
-[Pagefind](https://pagefind.app/), so the registry can be read straight off the machine that
-computed it.
-
-## A registry is a repository
-
-One repo per registry, cloned wherever it is read, brought up to date with `git pull`, exactly as a
-Julia registry works. `Archeion.toml` at the root is its identity; the name is deliberately not
-`Registry.toml`, so a clone sitting beside real registries cannot be mis-added to Pkg.
-
-```julia
-Archeion.create_registry("/path/to/Registry"; name = "Lab", repo = "git@github.com:org/Registry.git")
-Archeion.deposit("report"; project = "…", source = "phase1", root = "/path/to/Registry")
-Archeion.sync("/path/to/Registry")        # pull --rebase, then push (sets the upstream on the first)
-```
-
-A deposit into a git-backed registry is a commit, staging the record directory and the index by
-explicit path, so the history answers "what did this look like on that date". Replicating a registry
-is `git clone`: no server, no export step.
-
-Publishing a public registry is one call, and it refuses rather than pretending:
-
-```julia
-Archeion.publish_pages("/path/to/Registry")   # -> the URL GitHub serves it at
-```
-
-It asks GitHub whether the repository is private (Pages needs a paid plan there) and whether Pages
-is enabled at all, because a push to `gh-pages` succeeds either way: a green deploy reports that the
-push happened, never that the site is reachable. It also refuses a `gh-pages` that is not this
-registry's site, which is what a Documenter branch looks like. The branch carries one commit and is
-force-pushed, because it is derived from the registry and its history would only repeat `main`'s.
-
-**Visibility is a property of the registry, not of a record.** A private registry is a private repo:
-read the clone locally, no site. A public registry is a public repo, and its `gh-pages` branch serves
-the catalogue. Publishing a result means depositing it into the public registry, so nothing can leak
-through a per-record flag that was never set.
-
-## Quickstart
+A registry of rendered research results: plain files in a git repository, one directory per
+record, one frozen directory per revision, and nothing that has to be running for them to be read.
+The format is [`SPEC.md`](SPEC.md) (`spec = "registry/1"`, draft). This package is one
+implementation of it and depends on the standard library only.
 
 ```julia
 using Archeion
 
-Archeion.deposit(
-    "report";                       # any built directory with an index.html on top
-    project = "OpenBoundary",
-    source  = "phase1",
-    title   = "Does the environment remove the open boundary?",
-    srcdir  = ".",                  # snapshot this tree's commit + environment into repro/
-    root    = "/path/to/registry",  # or set ARCHEION_REGISTRY once and drop this
-)
+Archeion.validate("path/to/registry")          # (report, summary): errors, warnings, records
+Archeion.build("path/to/registry")             # a static site in _site/, relative links only
 ```
 
-That copies the directory in, captures the provenance bundle, writes `record.toml`, and rebuilds
-the catalogue. `strict = true` refuses a source tree with uncommitted changes; otherwise the
-record records `git_dirty` and the card says `+dirty`, because a commit that does not describe
-the tree that ran is worse than no commit at all.
+From a shell, the same two as a CI job would run them:
 
-Rendering a parameter sweep first is one call up the stack:
+```sh
+julia -m Archeion validate path/to/registry    # exit 1 on any error
+julia -m Archeion build path/to/registry       # exit non-zero if a link in the site is broken
+```
+
+## Adding a result
+
+A record is created once and gets revisions after that. The two are separate operations, so a
+copied script cannot silently continue another record:
 
 ```julia
-Pinax.report(vault, recipe; title = "…", out = "report")         # gallery + agent.json
-Archeion.deposit(
-    "report";
-    project = "…", source = "phase1", srcdir = ".",
-    doc = Pinax.current_document(),      # `report` returns (; gallery, agent, n), not the doc
-)
+using Archeion, Pinax
+
+new_binding(".registry/bindings/phase.toml";      # once; commit the file it writes
+            registry = "../my-registry", project = "p_xxxxxxxx", slug = "phase-diagram")
+
+# ... build the document with @page / @section / @figure, then render both faces ...
+render(; out = "out/gallery")
+render(; theme = :agent, out = "out/agent")
+
+deposit(".registry/bindings/phase.toml";          # every time: a new revision of that record
+        gallery = "out/gallery", agent = "out/agent", source_repo = pwd(),
+        doc = Archeion.doc_fields(Pinax.current_document(); tags = ["..."]))
 ```
 
-Heavy data is never copied into the registry. A record references it by `data_keys` (DataVault
-keys), so the registry stays small enough to keep forever.
+`doc_fields` reads the document that was rendered, not its output. `deposit` writes the revision
+beside the registry, validates the whole registry with it in place, takes it back out if that
+fails, and otherwise commits that one path and pushes.
 
-## Optional layers, on top of the same tree
+[QAtlasHub/archeion-demo](https://github.com/QAtlasHub/archeion-demo) is a registry with one record
+made this way.
 
-| layer | what it adds | entry point |
-| --- | --- | --- |
-| SQLite | FTS5 search, `body_md` for RAG, record ↔ run M:N | `ingest(doc; db, …)` |
-| `web/` (Node) | annotation write-back: memos, tags, status, a Zettelkasten note layer | `web/README.md` |
-| deploy | push the built tree to a private host over FTPS, creds held by an agent | `deploy`, `publish` |
+## Before 0.4
 
-They read the same records; none of them is on the path between a result and someone reading it.
-
-## Configuration
-
-Archeion ships no project config. A project adds an `[archeion]` section to the SAME `config.toml`
-that drives ParamIO / DataVault / ParallelManager; see `config/archeion.example.toml`. The
-registry root resolves as: explicit argument → `[archeion] root` → `ENV["ARCHEION_REGISTRY"]` →
-`~/registry`.
+Up to v0.3.3 Archeion was a different package: a registry with an SQLite index, a Node web app and
+an FTPS deploy. 0.4 keeps none of it and is not compatible with it. Code that calls the 0.3 API
+should pin `rev = "v0.3.3"`.

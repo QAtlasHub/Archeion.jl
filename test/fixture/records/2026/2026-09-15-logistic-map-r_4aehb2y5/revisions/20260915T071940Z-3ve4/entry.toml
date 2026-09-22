@@ -1,0 +1,54 @@
+spec = "registry/1"
+parents = []
+
+[id]
+project = "p_z7ne42dt"
+record = "r_4aehb2y5"
+rev = "20260915T071940Z-3ve4"
+kind = "report"
+
+[time]
+# The time of the commit that deposited this record in the Archeion 0.3 layout (78ae645).
+frozen = 2026-09-15T07:19:40Z
+
+[doc]
+title = "The logistic map, as a model record"
+status = "final"
+tags = ["example", "chaos"]
+
+[anchors]
+stable = ["logistic", "orbits", "bifurcation", "oscillator", "decay"]
+local = ["orbits_fig1", "bifurcation_fig1", "bifurcation_tbl1", "decay_fig1"]
+
+[source]
+# Archeion read the git state when it deposited, not when the report was rendered.
+captured = "publish"
+
+[[source.repo]]
+role = "render"
+url = "https://github.com/QAtlasHub/archeion-demo.git"
+commit = "340c965b8c3a8fab38857671a410ecfe13107c31"
+dirty = false
+
+[preservation]
+level = "read"
+external = [
+    "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css",
+    "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js",
+    "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js",
+]
+
+[migrated]
+from = "archeion/0.3"
+path = "demo/logistic"
+# Archeion wrote local time without a zone. The depositing machine runs in UTC, and the deposit
+# commit is one second later, but the value is kept as written rather than converted.
+original_date = "2026-09-15T07:19:39.705"
+dropped = [
+    ".deposit.toml",
+    ".pinax-manifest.toml",
+    "agent/.pinax-manifest.toml",
+    "repro/reproduce.sh",
+]
+# reproduce.sh ran `Pkg.instantiate` in a project that commit 340c965 does not have (no
+# Project.toml), and no Manifest.toml was captured, so the render environment is unknown.
