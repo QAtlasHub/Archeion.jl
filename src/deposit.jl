@@ -169,7 +169,7 @@ end
 
 """
     deposit(binding; gallery, agent, doc, source_repo, external = [], repro = Dict(),
-            parents = nothing, push = true) -> NamedTuple
+            parents = nothing, push = true, provenance = nothing) -> NamedTuple
 
 Freeze a new revision of the binding's record: copy `gallery` and `agent`, write `entry.toml`,
 `README.md` and `SHA256SUMS`, move it into place, validate the whole registry (and take the
@@ -179,6 +179,11 @@ revision back out if that fails), then commit only that path and push.
 into `stable` and `positional` (written as `anchors.local`), and optionally `tags`, `question`,
 `claim`. `parents` defaults to the record's current revision; a record in conflict needs them
 named. `repro` maps paths under `repro/` to files.
+
+`provenance` adds per-point provenance (SPEC.md §5.5): the keywords of `write_provenance!`, which
+[`provenance_from`](@ref) builds from a DataVault vault and a `Pinax.report` result. A point whose
+bytes read differ from what its computation recorded makes the deposit refuse, unless
+`allow_mismatch = true`.
 """
 function deposit(
     binding;
@@ -190,6 +195,7 @@ function deposit(
     repro=Dict{String,String}(),
     parents=nothing,
     push=true,
+    provenance=nothing,
 )
     isfile(binding) ||
         error("no binding at $binding; create one with new_binding (once per record)")
@@ -271,6 +277,14 @@ function deposit(
     end
     open(io -> TOML.print(io, entry; sorted=true), joinpath(incoming, "entry.toml"), "w")
     write(joinpath(incoming, "README.md"), readme(entry))
+    if provenance !== nothing
+        try
+            write_provenance!(incoming; provenance...)
+        catch
+            rm(incoming; recursive=true, force=true)      # nothing half-written is left behind
+            rethrow()
+        end
+    end
     write_sums(incoming)                                  # last: its presence means "complete"
 
     final = joinpath(revroot, rev)

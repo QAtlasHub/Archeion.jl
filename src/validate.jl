@@ -267,6 +267,7 @@ function check_revision(r::Report, revdir, record, revs)
         end
     end
     check_values(r, path, e)
+    check_provenance(r, revdir)
     return (;
         name,
         parents=something(parents, []),

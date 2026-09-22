@@ -38,6 +38,9 @@ function read_registry(root)
                 name=n,
                 dir=joinpath(dir, "revisions", n),
                 entry=TOML.parsefile(joinpath(dir, "revisions", n, "entry.toml")),
+                provenance=let f = joinpath(dir, "revisions", n, "provenance.toml")
+                    isfile(f) ? TOML.parsefile(f) : nothing
+                end,
             ) for n in sort(readdir(joinpath(dir, "revisions")))
         ]
         evdir = joinpath(dir, "events")
@@ -199,6 +202,28 @@ $(isempty(rtags) ? "" : "<div class=\"meta\">$(html_escape(join(rtags, ", ")))</
     return page(name, body)
 end
 
+# One line for a revision's per-point provenance (§5.5): how many points, how many of them read
+# the bytes their computation recorded, and how far the code that computed them was checked.
+function provenance_line(p)
+    p === nothing && return "per-point provenance: none"
+    c = get(p, "counts", Dict())
+    parts = [
+        "$(get(p, "points", 0)) points: $(get(c, "read_matches_result", 0)) read as recorded",
+    ]
+    d = get(c, "read_differs_from_result", 0)
+    d > 0 && push!(parts, "<span class=\"warn\">$d read other bytes</span>")
+    u = get(c, "result_unknown", 0)
+    u > 0 && push!(parts, "$u unrecorded")
+    b = get(p, "bindings", Dict())
+    push!(
+        parts,
+        "code " * join(("$(html_escape(k)) $(b[k])" for k in sort(collect(keys(b)))), ", "),
+    )
+    m = length(get(p, "missing_observations", []))
+    m > 0 && push!(parts, "<span class=\"warn\">$m observation(s) missing</span>")
+    return join(parts, " · ")
+end
+
 function record_page(name, projects, rec)
     rev = shown(rec)
     yanked = subjects(rec.events, "yank")
@@ -226,9 +251,10 @@ function record_page(name, projects, rec)
             rows,
             """<tr class="$(r.name in yanked ? "yanked" : "")"><td><code>$(html_escape(r.name))</code><br>$(join(marks))</td>
 <td>$(html_escape(e["doc"]["title"]))<div class="meta">$(html_escape(e["doc"]["status"])) · frozen $(stamp(e["time"]["frozen"]))
-· code state $(cap === nothing ? "unknown" : "read at " * html_escape(cap)) · $(html_escape(e["preservation"]["level"]))</div></td>
+· code state $(cap === nothing ? "unknown" : "read at " * html_escape(cap)) · $(html_escape(e["preservation"]["level"]))
+<br>$(provenance_line(r.provenance))</div></td>
 <td><a href="$p/gallery/index.html">report</a> · <a href="$p/agent/agent.json">agent.json</a>
-· <a href="$p/README.md">README</a> · <a href="$p/entry.toml">entry</a></td></tr>
+· <a href="$p/README.md">README</a> · <a href="$p/entry.toml">entry</a>$(r.provenance === nothing ? "" : " · <a href=\"$p/provenance.toml\">provenance</a>")</td></tr>
 """,
         )
     end
