@@ -1,61 +1,78 @@
+"""
+    Archeion
+
+A registry of rendered research results, kept as plain files in a git repository and read with
+nothing but a text viewer if need be. The format is `SPEC.md` (`spec = "registry/1"`); this
+package is one implementation of it, depending on the standard library only.
+
+- [`validate`](@ref) checks a registry against the format.
+- [`build`](@ref) renders it as a static site with relative links only.
+- [`new_binding`](@ref) and [`deposit`](@ref) add a record, then revisions of it.
+- [`doc_fields`](@ref) (with Pinax loaded) takes what an entry needs from a rendered document.
+
+From a shell: `julia -m Archeion validate [root]`, `julia -m Archeion build [root] [out]`.
+"""
 module Archeion
 
-# Archeion — a reproducible experiment registry that publishes Pinax galleries as a
-# private, searchable static site. Conceptually a "Vault of DataVaults": DataVault
-# formalizes a *per-project* directory layout but is intentionally unaware of any
-# higher-level structure, so Archeion is the layer ABOVE — it discovers many DataVault
-# output dirs across projects, aggregates their figures/data + provenance (生成元) into one
-# unified, searchable view, and adds the env/code reproducibility Pinax/DataVault don't.
+using Dates
+using Random
+using SHA
+using TOML
 
-using TOML: TOML
-using JSON3: JSON3
-using Dates: Dates
-using Markdown: Markdown
-using LibGit2: LibGit2
-using Pinax: Pinax
-using DataVault: DataVault
-using SQLite: SQLite
-using DBInterface: DBInterface
-using SHA: sha256
-using Sockets: Sockets, listen, connect, accept, gethostname
-using Serialization: serialize, deserialize
+include("validate.jl")
+include("build.jl")
+include("deposit.jl")
 
-include("repro.jl")      # git + environment snapshot (env/code provenance)
-include("record.jl")     # Record metadata <-> record.toml
-include("index.jl")      # records -> cross-run index, via Pinax.contents
-include("search.jl")     # Pagefind full-text search over the assembled site
-include("aggregate.jl")  # cross-project discovery over DataVault outdirs ("Vault of DataVaults")
-include("registry.jl")   # the registry as a directory tree: record.toml is the only parsed file
-include("registry_repo.jl") # the registry as a git repo: Archeion.toml identity, commit, sync
-include("digest.jl")     # the registry's machine face: index.json, and the dashboard built from it
-include("pages.jl")      # the public face: a public registry published on its gh-pages branch
-include("ingest.jl")     # records -> web/db/archeion.db (SQLite; body_md = RAG-portable source)
-include("read.jl")       # read the app-owned annotation layer back (comments/tags/status) -> LLM
-include("deploy.jl")     # publish the built site privately over FTPS (Lolipop) + Basic auth
-include("transport.jl")  # backend-neutral push/pull seam (FTPS / local; hostname dispatch)
-include("secret.jl")     # encrypt the deploy config at rest; REPL-only lock/view (LLM can't decrypt)
-include("agent.jl")      # ssh-agent-style daemon: holds creds in memory, serves deploy/pull over a socket
-include("active.jl")     # `initialize` host default + no-config deploy/pull/publish (delegated to the agent)
+"""
+    doc_fields(doc; tags = String[], question = nothing, claim = nothing) -> NamedTuple
 
-export ReproBundle, capture_repro
-export Record, write_record, read_record
-export build_index, add_search
-export master_ledger, records_from_outdirs, discover
-export registry_root, read_records, record_dirs, reindex, deposit
-export digest, build_dashboard
-export create_registry, registry_info, is_registry, sync
-export publish_pages, pages_status, remote_slug
-export ingest
-export record_comments,
-    record_tags,
-    record_annotations,
-    record_annotation_list,
-    project_annotations,
-    feedback_md
-export record_versions, status
-export deploy, write_basic_auth, read_deploy_target
-export RemoteTransport,
-    FTPSTransport, LocalTransport, transport, pull, pull_file, push_dir, publish
-export initialize, active, deinitialize, agent_up, lock_config, view_config
+What [`deposit`](@ref) needs from a document model: `title`, `status`, `stable` and `positional`
+anchors, and the optional fields given. The method for a `Pinax.Document` is defined when Pinax is
+loaded, and reads the document that was rendered, never its output.
+"""
+function doc_fields end
 
-end # module Archeion
+export deposit, new_binding
+public validate, build, anchors, doc_fields, main
+
+function usage(io=stderr)
+    println(io, "usage: julia -m Archeion validate [root]")
+    println(io, "       julia -m Archeion build [root] [out]")
+    return 2
+end
+
+"""
+    main(args) -> exit code
+
+The command line: `validate [root]` prints the records and every warning and error, and returns 1
+when there is an error; `build [root] [out]` writes the site (by default to `<root>/_site`).
+"""
+function (@main)(args)
+    isempty(args) && return usage()
+    cmd, rest = args[1], args[2:end]
+    root = isempty(rest) ? pwd() : rest[1]
+    if cmd == "validate"
+        r, summary = validate(root)
+        foreach(s -> println("  ", s), summary)
+        foreach(w -> println("warning: ", w), r.warnings)
+        foreach(e -> println("error: ", e), r.errors)
+        println(
+            if isempty(r.errors)
+                "ok: $(length(summary)) record(s)"
+            else
+                "$(length(r.errors)) error(s)"
+            end,
+        )
+        return isempty(r.errors) ? 0 : 1
+    elseif cmd == "build"
+        res = build(root, length(rest) >= 2 ? rest[2] : joinpath(root, "_site"))
+        println(
+            "built $(res.records) record(s) into $(res.out) ",
+            "($(round(res.bytes / 1024; digits = 1)) KiB)",
+        )
+        return 0
+    end
+    return usage()
+end
+
+end
