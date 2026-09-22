@@ -131,10 +131,13 @@ commit = "<40 hex>"
 dirty = false
 ```
 
-`captured` is the weakness of the claim, stated. Only `"run-start"` says what code was loaded;
-`"completion"` and `"publish"` say what was on disk at a later moment. Provenance for individual
-parameter points (which point was computed by which code, and which bytes the report read) is part
-of §10 until the upstream packages can supply it.
+`captured` says when the repository's working tree was observed, and nothing more. None of its
+values says which code a process had loaded: a process can run code it loaded before the
+observation, or code that is not on disk at all (a function defined in a REPL, a closure sent from
+another process). `"run-start"`, `"completion"` and `"publish"` are three moments of observation,
+not a scale of strength, and `source` never claims that the observed commit produced the result.
+That claim, and the provenance of individual parameter points (which point was computed by which
+code, and which bytes the report read), is part of §10 until the upstream packages can supply it.
 
 ### 5.4 `doc.status`
 
@@ -189,9 +192,11 @@ the catalogue, search indexes, the current revision of a record, counts.
 - **Experiments and notes.** Whether a lab notebook is a separate object or a record of another kind.
 - **Identifier length.** Eight characters (40 bits) is readable; a validator rejects collisions. A
   full UUID is the alternative.
-- **Per-point provenance.** A table from each parameter point to the source state loaded at worker
-  start and the digest of the result bytes the report read. Needs DataVault and SweepRunner to record
-  the source state at worker start.
+- **Per-point provenance.** A table, kept outside `entry.toml`, from each parameter point to the
+  digest of the result bytes the report read and to an observation of the source the computing
+  process could see. The observation and its **binding** to the code that ran are separate claims:
+  the binding is `unverified` unless loaded sources were checked against the observation, or the
+  process was started from it. Needs DataVault, SweepRunner and Pinax to record these.
 - **Source capture for a dirty tree.** A git commit object built from a temporary index, or a
   content-addressed tar of declared source roots.
 - **Data references and replicas.** Content digests of the data a revision used, and events that
