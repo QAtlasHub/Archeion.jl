@@ -8,13 +8,15 @@ rendered reports, accumulated across projects in a git repository, readable with
 - The **format** is `SPEC.md` (`spec = "registry/1"`). The package implements it; it is not the
   format. A change to what a registry may contain is a change to `SPEC.md` first.
 - `Archeion.validate(root) -> (report, summary)` · `Archeion.build(root[, out])` ·
-  `new_binding(path; registry, project, slug)` · `deposit(binding; gallery, agent, doc, source_repo)`
+  `new_binding(path; registry, project, slug, kind)` · `deposit(binding; gallery, agent, doc, source_repo)`
   · `Archeion.doc_fields(::Pinax.Document)` (extension) · `julia -m Archeion validate|build`.
 
 ## Contracts that trip callers
 
 - **A record is created once** (`new_binding`, committed in the repo that renders it) and every
-  `deposit` through that binding adds a revision. `deposit` never creates a record by itself.
+  `deposit` through that binding adds a revision. `deposit` never creates a record by itself. The
+  binding also fixes the record's `kind` (`"report"` or `"note"`); a binding without one means
+  `"report"`, and an existing record keeps the kind it was created with.
 - **The entry is written from the document model**, never parsed back from the output: pass
   `doc_fields(Pinax.current_document())`, not something read out of `agent.json`.
 - **Revisions are immutable.** Corrections, withdrawals and comments are events (SPEC §7);

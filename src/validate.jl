@@ -14,6 +14,7 @@ const RESERVED = Set([
 ])   # R4
 const FORBIDDEN_KEYS = Set(["completed", "available", "missing", "done", "exists"])  # §8
 const EVENT_KINDS = Set(["comment", "yank", "supersede", "capability.verified"])     # §7
+const RECORD_KINDS = Set(["report", "note"])                                          # §4
 const PATH_TIME = dateformat"yyyymmdd\THHMMSS\Z"
 
 struct Report
@@ -353,8 +354,8 @@ function check_record(r::Report, recdir, year, projects, seen)
         err!(r, path, "`id` $rid does not match the directory's $id")
     kind = require(r, path, d, "kind"; type=String)
     kind === nothing ||
-        kind == "report" ||
-        err!(r, path, "`kind` must be \"report\" in registry/1")
+        kind in RECORD_KINDS ||
+        warn!(r, path, "record kind `$kind` is not known to registry/1")
     proj = require(r, path, d, "project"; type=String)
     proj === nothing ||
         proj in projects ||

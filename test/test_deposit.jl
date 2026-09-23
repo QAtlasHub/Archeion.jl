@@ -113,6 +113,31 @@ end
     end
 
     with_git_fixture() do root, binding, src
+        nb = joinpath(root, ".registry", "bindings", "note.toml")
+        new_binding(nb; registry=root, project="p_z7ne42dt", slug="lab-notes", kind="note")
+        res = deposit(nb; src..., doc=DOC, source_repo=root, push=false)
+        record = TOML.parsefile(joinpath(dirname(dirname(res.dir)), "record.toml"))
+        @test record["kind"] == "note"
+        @test TOML.parsefile(joinpath(res.dir, "entry.toml"))["id"]["kind"] == "note"
+        @test isempty(first(Archeion.validate(root)).errors)
+        site = joinpath(mktempdir(), "_site")
+        Archeion.build(root, site)
+        page = read(
+            joinpath(site, relpath(dirname(dirname(res.dir)), root), "index.html"), String
+        )
+        @test occursin("· note", page)
+        rm(dirname(site); recursive=true)
+
+        bad = joinpath(root, ".registry", "bindings", "diary.toml")
+        e = attempt(
+            () -> new_binding(
+                bad; registry=root, project="p_z7ne42dt", slug="diary", kind="diary"
+            ),
+        )
+        @test e isa ErrorException && occursin("kind must be one of", e.msg)
+    end
+
+    with_git_fixture() do root, binding, src
         nb = joinpath(root, ".registry", "bindings", "second.toml")
         new_binding(nb; registry=root, project="p_z7ne42dt", slug="second-question")
         res = deposit(nb; src..., doc=DOC, source_repo=root, push=false)

@@ -2,7 +2,7 @@
 
 A registry of rendered research results: plain files in a git repository, one directory per
 record, one frozen directory per revision, and nothing that has to be running for them to be read.
-The format is [`SPEC.md`](SPEC.md) (`spec = "registry/1"`, draft). This package is one
+The format is [`SPEC.md`](SPEC.md) (`spec = "registry/1"`, stable). This package is one
 implementation of it and depends on the standard library only.
 
 ```julia
