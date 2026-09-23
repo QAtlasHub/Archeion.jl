@@ -83,14 +83,18 @@ comment_text(e) = something(getpath(e, "body", "text"), get(e, "text", nothing),
 # ── pages ─────────────────────────────────────────────────────────────────────────────────────
 
 const CSS = """
-:root{--bg:#fbfaf7;--fg:#1d1d1b;--mut:#6b6a66;--line:#e2e0da;--card:#fff;--acc:#2f5d8a;
---warn:#9a5b00;--bad:#a1332b;--ok:#2e6b3a}
-@media (prefers-color-scheme:dark){:root{--bg:#161615;--fg:#ecebe7;--mut:#a3a19b;--line:#33322f;
---card:#1f1f1d;--acc:#8fb4dc;--warn:#e0a44a;--bad:#e4867e;--ok:#8cc79a}}
+/* The catalogue and the reports it links to are one thing to read, so they are one palette: these
+   are Pinax's gallery defaults (its `src/themes/gallery.jl`), named here because this package
+   cannot depend on it, and checked against it by a test. There is deliberately no dark mode —
+   Pinax renders light, and a dark catalogue in front of light reports is a worse seam than any
+   shade. */
+:root{--bg:#fafafa;--fg:#24292f;--mut:#57606a;--line:#e2e5e9;--card:#fff;--acc:#0366d6;
+--soft:#f6f8fa;--warn:#9a6700;--bad:#a40e26;--ok:#1a7f37}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
-font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:1080px;margin:0 auto;padding:24px 16px 64px}a{color:var(--acc)}
-h1{font-size:1.5rem;margin:0 0 4px}h2{font-size:1.1rem;margin:28px 0 8px}
+font:16px/1.5 system-ui,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}a{color:var(--acc)}
+h1{font-size:1.5rem;margin:0 0 4px;border-bottom:1px solid var(--line);padding-bottom:.2rem}
+h2{font-size:1.1rem;margin:28px 0 8px;border-bottom:1px solid var(--line);padding-bottom:.2rem}
 .mut{color:var(--mut)}.state{display:flex;flex-wrap:wrap;gap:8px 20px;margin:16px 0;
 padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
 .state b{font-variant-numeric:tabular-nums}.warn{color:var(--warn)}.bad{color:var(--bad)}
@@ -112,7 +116,7 @@ th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertic
 .bars{display:flex;align-items:flex-end;gap:3px;height:70px;margin:10px 0 4px}
 .bar{flex:1;max-width:28px;display:flex;flex-direction:column;justify-content:flex-end;
 height:100%;text-align:center}.bar>div{background:var(--acc);border-radius:2px 2px 0 0;min-height:2px}
-.bar span{font-size:.7rem;color:var(--mut)}h2{font-size:1.05rem;margin:22px 0 6px}
+.bar span{font-size:.7rem;color:var(--mut)}
 .pick{color:var(--acc)}
 """
 
