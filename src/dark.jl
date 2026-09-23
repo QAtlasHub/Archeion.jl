@@ -68,7 +68,8 @@ const ROLE = Dict(
 )
 
 # What each role is after dark. GitHub's dark canvas, because the light side is GitHub's light one
-# and a reader who knows one knows the other.
+# and a reader who knows one knows the other. `build.jl`'s own dark block is built from this, so
+# the catalogue and the reports cannot drift apart.
 const DARK = Dict(
     "bg" => "#0d1117",
     "fg" => "#e6edf3",
@@ -93,66 +94,182 @@ const DARK = Dict(
 )
 
 # A document is a white page. It is not a surface of the theme and does not follow it into the
-# dark — the same exception the light stylesheet makes, for the same reason.
-const DRAWN_ON_WHITE = ("pinax-pdf", "card-thumb-pdf", "thumb-pdf")
+# dark — the same exception the light stylesheet makes, for the same reason. Matched against the
+# rule's selector, not the line it happens to be printed on.
+const DRAWN_ON_WHITE = ("pinax-pdf", "card-thumb-pdf")
 
-dark_of(hex) = get(DARK, get(ROLE, lowercase(hex), ""), nothing)
+function dark_of(hex)
+    role = get(ROLE, lowercase(hex), nothing)
+    role === nothing && return nothing
+    return get(DARK, role, nothing)
+end
+
+# A hex run starting at `i`, or nothing. CSS allows 3, 4, 6 or 8 digits; anything else spelled
+# with a `#` is not a colour.
+function hex_at(css, i)
+    j = nextind(css, i)
+    n = 0
+    while j <= lastindex(css) && isxdigit(css[j]) && n < 8
+        j = nextind(css, j)
+        n += 1
+    end
+    n in (3, 4, 6, 8) || return nothing
+    # `#abcdefg` is an identifier that merely starts like a colour
+    j <= lastindex(css) &&
+        (isletter(css[j]) || isdigit(css[j]) || css[j] == '_') &&
+        return nothing
+    return css[i:prevind(css, j)], j
+end
 
 """
-    darkened(css) -> String
+    recoloured(css, unknown) -> String
 
-`css` again, every colour exchanged for its dark counterpart, wrapped in a
-`prefers-color-scheme: dark` query. Returns `""` when there is nothing to say: a stylesheet that
-already answers the query brought its own dark mode and keeps it, and one whose colours are not
-all known is left alone rather than half-converted.
+`css` with every colour exchanged for its dark counterpart — and **only** the colours. A `#` in a
+stylesheet is a colour just once: in the value of a declaration. Everywhere else it names
+something, and rewriting it breaks the thing it names —
+
+    #eee{…}                 an id selector, not a shade
+    fill:url(#eee)          a reference to a gradient defined elsewhere
+    content:"#eee"          three characters somebody reads
+
+so this walks the sheet as blocks and declarations rather than as lines of text, and leaves
+comments, strings, selectors and `url(…)` exactly as they are. Colours it does not know are
+collected in `unknown` and left alone; the caller decides what that means.
+"""
+function recoloured(css::AbstractString, unknown::Set{String})
+    out = IOBuffer()
+    prelude = IOBuffer()          # the text since the last brace: a selector, or an at-rule
+    stack = String[]              # the preludes of the blocks we are inside
+    in_value = false              # past the `:` of a declaration, where a colour may stand
+    i, n = firstindex(css), lastindex(css)
+    while i <= n
+        c = css[i]
+        if c == '/' && i < n && css[nextind(css, i)] == '*'          # a comment
+            j = findnext("*/", css, i)
+            stop = j === nothing ? n : last(j)
+            print(out, css[i:stop])
+            i = nextind(css, stop)
+        elseif c == '"' || c == '\''                                  # text, not a colour
+            j = findnext(isequal(c), css, nextind(css, i))
+            stop = j === nothing ? n : j
+            print(out, css[i:stop])
+            i = nextind(css, stop)
+        elseif c == '{'
+            push!(stack, strip(String(take!(prelude))))
+            in_value = false
+            print(out, c)
+            i = nextind(css, i)
+        elseif c == '}'
+            isempty(stack) || pop!(stack)
+            take!(prelude)
+            in_value = false
+            print(out, c)
+            i = nextind(css, i)
+        elseif isempty(stack)                                         # a selector or an at-rule
+            print(prelude, c)
+            print(out, c)
+            i = nextind(css, i)
+        elseif c == ':'
+            in_value = true
+            print(out, c)
+            i = nextind(css, i)
+        elseif c == ';'
+            in_value = false
+            print(out, c)
+            i = nextind(css, i)
+        elseif in_value && lowercase(css[i:min(n, i + 3)]) == "url("  # a name, not a colour
+            j = findnext(isequal(')'), css, i)
+            stop = j === nothing ? n : j
+            print(out, css[i:stop])
+            i = nextind(css, stop)
+        elseif in_value && c == '#' && hex_at(css, i) !== nothing
+            hex, j = hex_at(css, i)
+            white = lowercase(hex) in ("#fff", "#ffffff")
+            on_white = any(w -> any(s -> occursin(w, s), stack), DRAWN_ON_WHITE)
+            d = dark_of(hex)
+            if length(hex) == 9                                       # #rrggbbaa: an alpha
+                print(out, hex)
+            elseif white && on_white
+                print(out, hex)
+            elseif d === nothing
+                push!(unknown, lowercase(hex))
+                print(out, hex)
+            else
+                print(out, d)
+            end
+            i = j
+        else
+            print(out, c)
+            i = nextind(css, i)
+        end
+    end
+    return String(take!(out))
+end
+
+"""
+    darkened(css) -> NamedTuple
+
+The dark layer for `css`: `layer`, the `@media (prefers-color-scheme: dark)` block to append, and
+`why`, which says what happened —
+
+- `:ok` — a layer was derived, and `layer` is it
+- `:already` — the stylesheet answers the query itself and keeps its own dark mode
+- `:colourless` — there is nothing to darken
+- `:unknown` — it draws with colours not in `ROLE`, listed in `unknown`
+
+A stylesheet is never half-converted: an unknown colour means no layer at all, because a page
+half in the dark is worse than a page that stayed light.
 """
 function darkened(css)
-    occursin("prefers-color-scheme", css) && return ""
-    unknown = String[]
-    out = IOBuffer()
-    for line in split(css, '\n')
-        keep = any(w -> occursin(w, line), DRAWN_ON_WHITE)
-        println(
-            out,
-            replace(
-                line,
-                r"#[0-9a-fA-F]{3,8}\b" => function (hex)
-                    length(hex) == 9 && return hex          # #rrggbbaa: an alpha, left as it is
-                    keep && lowercase(hex) in ("#fff", "#ffffff") && return hex
-                    d = dark_of(hex)
-                    d === nothing && (push!(unknown, hex); return hex)
-                    return d
-                end,
-            ),
-        )
-    end
-    isempty(unknown) || return ""
-    return "\n@media (prefers-color-scheme: dark){\n" * String(take!(out)) * "}\n"
+    occursin("prefers-color-scheme", css) &&
+        return (; layer="", why=:already, unknown=String[])
+    unknown = Set{String}()
+    body = recoloured(css, unknown)
+    isempty(unknown) || return (; layer="", why=:unknown, unknown=sort!(collect(unknown)))
+    body == css && return (; layer="", why=:colourless, unknown=String[])
+    return (;
+        layer="\n@media (prefers-color-scheme: dark){\n" * body * "\n}\n",
+        why=:ok,
+        unknown=String[],
+    )
 end
 
-# The stylesheet a face of a revision is read through. `assets/` is where vendored files live
-# (KaTeX brings its own, and rewriting someone else's library is not ours to do).
+# The stylesheet a face of a revision is read through. A vendored file is someone else's to
+# maintain (KaTeX brings its own), and `assets` is the directory they live in — as a path segment,
+# so a directory merely spelled `dataassets` is still ours.
 function is_own_stylesheet(rel)
-    return endswith(rel, ".css") && !occursin("assets/", replace(rel, '\\' => '/'))
+    return endswith(rel, ".css") && !("assets" in splitpath(rel))
 end
 
 """
-    darken_site_copy!(dir) -> Int
+    darken_site_copy!(dir) -> NamedTuple
 
 Give every stylesheet under `dir` — a copy of a revision inside `_site`, never the revision — a
-dark layer, and say how many got one. A stylesheet that already has one, or that draws with a
-colour this does not know, is left exactly as it was.
+dark layer. Returns what happened, counted: `dark`, `already`, `colourless`, `unknown`, and
+`unknown_colours`, the ones that stopped a stylesheet from being converted. A report left light is
+the one failure this must not keep to itself.
 """
 function darken_site_copy!(dir)
-    n = 0
+    dark = already = colourless = unknown = 0
+    colours = Set{String}()
     for (d, _, files) in walkdir(dir), f in files
         rel = relpath(joinpath(d, f), dir)
         is_own_stylesheet(rel) || continue
         path = joinpath(d, f)
-        layer = darkened(read(path, String))
-        isempty(layer) && continue
-        open(io -> print(io, layer), path, "a")
-        n += 1
+        r = darkened(read(path, String))
+        if r.why === :ok
+            open(io -> print(io, r.layer), path, "a")
+            dark += 1
+        elseif r.why === :already
+            already += 1
+        elseif r.why === :colourless
+            colourless += 1
+        else
+            unknown += 1
+            union!(colours, r.unknown)
+            @warn "no dark mode for this stylesheet: it draws with colours Archeion does not \
+                   know, and half a conversion is worse than none" path colours = r.unknown
+        end
     end
-    return n
+    return (; dark, already, colourless, unknown, unknown_colours=sort!(collect(colours)))
 end
