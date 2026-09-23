@@ -22,6 +22,29 @@ function with_remote(f)
     end
 end
 
+# The fixture, its binding committed (so a clone of it can deposit too), on a bare remote.
+function with_shared_registry(f)
+    with_git_fixture() do root, binding, src
+        run(`git -C $root add -A`)
+        run(`git -C $root -c user.name=t -c user.email=t@t commit -qm binding`)
+        remote = mktempdir()
+        run(`git -C $remote init -q --bare`)
+        run(`git -C $root remote add origin $remote`)
+        run(`git -C $root push -q --set-upstream origin HEAD:refs/heads/master`)
+        clone = mktempdir()
+        run(`git clone -q $remote $clone`)
+        for c in (`config user.name t`, `config user.email t@t`)
+            run(`git -C $clone $c`)
+        end
+        try
+            f(root, binding, src, remote, clone)
+        finally
+            rm(remote; recursive=true, force=true)
+            rm(clone; recursive=true, force=true)
+        end
+    end
+end
+
 # A commit in `dir` that only `dir` has.
 function commit_in!(dir, name)
     write(joinpath(dir, name), "x\n")
@@ -88,6 +111,36 @@ end
         sent = Archeion.publish_revision!(root, res.rev, "t"; remote=:push)
         @test sent.pushed && sent.branch == "master"
         @test occursin(basename(res.dir), tracked(remote, "master"))
+    end
+end
+
+@testset "publish_revision!: a remote that moved is rebased onto, then revalidated" begin
+    with_shared_registry() do root, binding, src, remote, clone
+        theirs = deposit(binding; src..., doc=DOC, source_repo=root, push=false)
+        Archeion.publish_revision!(root, theirs.rev, "theirs"; remote=:push)
+
+        # This clone knew nothing of that revision when it deposited its own.
+        mine = deposit(
+            joinpath(clone, relpath(binding, root));
+            gallery=joinpath(clone, relpath(src.gallery, root)),
+            agent=joinpath(clone, relpath(src.agent, root)),
+            doc=DOC,
+            source_repo=clone,
+            push=false,
+        )
+        sent = Archeion.publish_revision!(clone, mine.rev, "mine"; remote=:push)
+        @test sent.pushed
+        on_remote = tracked(remote, "master")
+        @test occursin(theirs.rev, on_remote) && occursin(mine.rev, on_remote)
+        # Both name the same parent, so the record is in conflict — said, not resolved by time.
+        r, summary = Archeion.validate(clone)
+        @test isempty(r.errors) && occursin("in conflict", only(summary))
+    end
+end
+
+@testset "check_source_published: a repository with no remote says so" begin
+    with_git_fixture() do root, binding, src
+        @test_logs (:warn, r"no origin/HEAD") (@test !Archeion.check_source_published(root))
     end
 end
 
