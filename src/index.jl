@@ -45,30 +45,57 @@ function scan(root)
     return projects, records
 end
 
+const INDEX_SECTIONS = ("[projects]", "[records]")
+
+# Everything above the index, kept as the bytes it already is. `registry.toml` is a file people
+# write by hand — `init`'s explanation, the `[site]` banner, the commented-out link template — and
+# every deposit reindexes, so reprinting this half from a parsed `Dict` would throw all of that
+# away on the first deposit.
+function head_lines(root)
+    path = registry_file(root)
+    isfile(path) || error(
+        "no $INDEX_FILE at $root: the index is written beside a registry, not instead of one",
+    )
+    lines = readlines(path)
+    cut = findfirst(l -> strip(l) in INDEX_SECTIONS, lines)
+    cut === nothing && return lines
+    for l in lines[cut:end]
+        s = strip(l)
+        startswith(s, "[") &&
+            !(s in INDEX_SECTIONS) &&
+            error("$path has $s below its index; move it above `$(first(INDEX_SECTIONS))`")
+    end
+    head = lines[1:(cut - 1)]
+    any(
+        l -> startswith(l, "<<<<<<<") || l == "=======" || startswith(l, ">>>>>>>"), head
+    ) && error("$path has an unresolved conflict above its index; settle that part by hand")
+    while !isempty(head) && isempty(strip(last(head)))
+        pop!(head)
+    end
+    return head
+end
+
 """
     reindex!(root) -> NamedTuple
 
 Rewrite `registry.toml`'s `[projects]` and `[records]` from the tree, leaving the rest of the file
-alone. This is what resolves a conflict in the index: take either side, run this, and the answer is
-the tree's rather than a hand-merged guess.
+as it stands. This is what resolves a conflict in the index: take either side, run this, and the
+answer is the tree's rather than a hand-merged guess.
 """
 function reindex!(root)
-    reg = read_registry_toml(root)
     projects, records = scan(root)
-    reg["projects"] = projects
-    reg["records"] = records
-    write_registry_toml(root, reg)
+    write_index!(root, projects, records)
     return (; projects=length(projects), records=length(records))
 end
 
 # TOML.print would write a table per entry; the index wants one line each, sorted by UUID, so that
 # two deposits touch two different lines and git merges them without being asked.
-function write_registry_toml(root, reg)
-    head = Dict{String,Any}(k => v for (k, v) in reg if !(k in ("projects", "records")))
+function write_index!(root, projects, records)
     io = IOBuffer()
-    TOML.print(io, head; sorted=true)
-    for key in ("projects", "records")
-        listed = get(reg, key, Dict{String,Any}())
+    for l in head_lines(root)
+        println(io, l)
+    end
+    for (key, listed) in (("projects", projects), ("records", records))
         isempty(listed) && continue
         println(io)
         println(io, "[$key]")
@@ -86,6 +113,27 @@ function write_registry_toml(root, reg)
         end
     end
     write(registry_file(root), String(take!(io)))
+    return nothing
+end
+
+# Change one scalar above the index without reprinting the file. `migrate!` needs two of these, and
+# a registry.toml its owner has been editing since `init` should come out of a conversion looking
+# like the file they edited.
+function set_head!(root, key, value)
+    path = registry_file(root)
+    lines = readlines(path)
+    stop = something(findfirst(l -> startswith(strip(l), "["), lines), length(lines) + 1)
+    assign = Regex("^(\\s*\\Q$key\\E\\s*=\\s*)(\"[^\"]*\"|[^\\s#]+)(.*)\$")
+    for i in 1:(stop - 1)
+        m = match(assign, lines[i])
+        m === nothing && continue
+        lines[i] = m[1] * repr(String(value)) * m[3]
+        write(path, join(lines, "\n") * "\n")
+        return nothing
+    end
+    kv = findlast(i -> occursin(r"^\s*[A-Za-z_][^=\[]*=", lines[i]), 1:(stop - 1))
+    insert!(lines, kv === nothing ? stop : kv + 1, "$key = $(repr(String(value)))")
+    write(path, join(lines, "\n") * "\n")
     return nothing
 end
 

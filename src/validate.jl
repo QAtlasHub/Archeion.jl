@@ -85,6 +85,16 @@ function check_spec(r, path, d; frozen_before=false)
     return err!(r, path, "`spec` must be \"$SPEC\"")
 end
 
+# The licence a conversion leaves behind (§11). A record keeps its `migrated` table for good, but
+# what the table excuses is not the record — it is what was already frozen when the conversion ran.
+# `at` is when that was, so a revision or event dated after it is held to registry/2 like any other.
+function migrated_before(was, stamp)
+    at = get(was, "at", nothing)
+    at isa DateTime || return false
+    t = tryparse(DateTime, stamp, PATH_TIME)
+    return t !== nothing && t < at
+end
+
 # ── §1 names and paths ────────────────────────────────────────────────────────────────────────
 
 function check_paths(r::Report)
@@ -226,14 +236,24 @@ function check_revision(r::Report, revdir, record, revs)
     check_sums(r, revdir)
     isfile(joinpath(revdir, "README.md")) || err!(r, revdir, "no README.md (§5.2)")
     e === nothing && return nothing
-    check_spec(r, path, e; frozen_before=haskey(record, "migrated"))
     # A revision frozen under registry/1 still names the identifiers of that day, and it may not
     # be rewritten: `SHA256SUMS` covers `entry.toml` (§5.2), and a digest a reader has cited does
-    # not change because the registry was converted. `record.migrated` is what makes it readable.
+    # not change because the registry was converted. `record.migrated` is what makes it readable
+    # — and `migrated.at` is what keeps that to the revisions that were already there.
     was = get(record, "migrated", Dict{String,Any}())
+    legacy = migrated_before(was, String(m[1]))
+    check_spec(r, path, e; frozen_before=legacy)
     for (k, want, before) in (
-        ("project", get(record, "project", nothing), get(was, "project", nothing)),
-        ("record", get(record, "uuid", nothing), get(was, "id", nothing)),
+        (
+            "project",
+            get(record, "project", nothing),
+            legacy ? get(was, "project", nothing) : nothing,
+        ),
+        (
+            "record",
+            get(record, "uuid", nothing),
+            legacy ? get(was, "id", nothing) : nothing,
+        ),
         ("rev", name, nothing),
         ("kind", get(record, "kind", nothing), nothing),
     )
@@ -305,22 +325,24 @@ function check_events(r::Report, recdir, recid, revinfo; was=Dict{String,Any}())
     isdir(evdir) || return events
     for f in sort(readdir(evdir))
         path = joinpath(evdir, f)
-        occursin(EVENT_FILE, f) || (
+        m = match(EVENT_FILE, f)
+        m === nothing && (
             err!(r, path, "event file is not `<YYYYMMDDTHHMMSSZ>-<origin>-<key>.toml`");
             continue
         )
         ev = load(r, path)
         ev === nothing && continue
-        check_spec(r, path, ev; frozen_before=(!isempty(was)))
+        legacy = migrated_before(was, String(m[1]))
+        check_spec(r, path, ev; frozen_before=legacy)
         kind = require(r, path, ev, "kind"; type=String)
         kind === nothing ||
             kind in EVENT_KINDS ||
-            warn!(r, path, "event kind `$kind` is not known to registry/1")
+            warn!(r, path, "event kind `$kind` is not known to $SPEC")
         require(r, path, ev, "at"; type=DateTime)
         subj = require(r, path, ev, "subject", "record"; type=String)
         subj === nothing ||
             subj == recid ||
-            subj == get(was, "id", nothing) ||            # written before the conversion (§11)
+            (legacy && subj == get(was, "id", nothing)) ||   # written before the conversion (§11)
             err!(r, path, "`subject.record` $subj is not this record")
         rev = getpath(ev, "subject", "rev")
         anchor = getpath(ev, "subject", "anchor")
@@ -412,12 +434,27 @@ end
 function validate(root)
     r = Report(abspath(root))
     spec = spec_of(r.root)
-    spec == SPEC_1 && err!(
-        r,
-        registry_file(r.root),
-        "this is a $SPEC_1 registry; convert it with `Archeion.migrate!` (SPEC §11)",
-    )
-    spec in (SPEC, nothing) || err!(r, registry_file(r.root), "`spec` is $(repr(spec))")
+    if spec == SPEC_1
+        err!(
+            r,
+            registry_file(r.root),
+            "this is a $SPEC_1 registry; convert it with `Archeion.migrate!` (SPEC §11)",
+        )
+    elseif spec === nothing
+        # Not a nicety: `reindex!` writes the index into this file, so a registry without one is a
+        # registry whose name, uuid and banner the next deposit would have nothing to preserve.
+        err!(
+            r,
+            registry_file(r.root),
+            if isfile(registry_file(r.root))
+                "no `spec`: a registry says what format it is (§2.1)"
+            else
+                "no $INDEX_FILE: a registry says what it is and what it holds (§2.1)"
+            end,
+        )
+    elseif spec != SPEC
+        err!(r, registry_file(r.root), "`spec` is $(repr(spec))")
+    end
     check_paths(r)
     projects = check_projects(r)
     seen = Dict{String,String}()

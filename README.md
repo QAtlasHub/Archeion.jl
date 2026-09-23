@@ -2,7 +2,7 @@
 
 A registry of rendered research results: plain files in a git repository, one directory per
 record, one frozen directory per revision, and nothing that has to be running for them to be read.
-The format is [`SPEC.md`](SPEC.md) (`spec = "registry/1"`, stable). This package is one
+The format is [`SPEC.md`](SPEC.md) (`spec = "registry/2"`, stable). This package is one
 implementation of it and depends on the standard library only.
 
 ```julia
@@ -87,7 +87,8 @@ copied script cannot silently continue another record:
 using Archeion, Pinax
 
 new_binding(".registry/bindings/phase.toml";      # once; commit the file it writes
-            registry = "../my-registry", project = "p_xxxxxxxx", slug = "phase-diagram")
+            registry = "../my-registry", slug = "phase-diagram",
+            project = "c0ffee00-1111-4222-8333-444444444444")   # the UUID in projects/<slug>.toml
 
 # ... build the document with @page / @section / @figure, then render both faces ...
 render(; out = "out/gallery")

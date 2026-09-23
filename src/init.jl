@@ -48,8 +48,8 @@ registry rather than writing over what is there.
 function init(
     root; name=basename(abspath(root)), title=name, tagline="", pages::Bool=true, kw...
 )
-    isfile(joinpath(root, "registry.toml")) &&
-        error("$root already holds a registry.toml; init starts a new registry")
+    isfile(registry_file(root)) &&
+        error("$root already holds a $INDEX_FILE; init starts a new registry")
     written = String[]
     for d in ("projects", "records")
         mkpath(joinpath(root, d))
@@ -58,8 +58,8 @@ function init(
         write(joinpath(root, keep), "")
         push!(written, keep)
     end
-    write(joinpath(root, "registry.toml"), registry_toml(name, title, tagline))
-    push!(written, "registry.toml")
+    write(registry_file(root), registry_toml(name, title, tagline))
+    push!(written, INDEX_FILE)
     gitignore = joinpath(root, ".gitignore")
     if !isfile(gitignore)
         write(gitignore, GITIGNORE)

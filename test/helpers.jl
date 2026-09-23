@@ -17,13 +17,22 @@ const RECORD_UUID = TOML.parsefile(joinpath(FIXTURE, REC_REL, "record.toml"))["u
 const PROJECT_UUID = TOML.parsefile(joinpath(FIXTURE, REC_REL, "record.toml"))["project"]
 
 # A fresh copy of the fixture; returns (root, record dir, revision dir).
-function fixture_copy(from=FIXTURE)
+function fixture_copy()
     root = mktempdir()
     for d in ("projects", "records")
-        cp(joinpath(from, d), joinpath(root, d))
+        cp(joinpath(FIXTURE, d), joinpath(root, d))
     end
-    cp(joinpath(from, "registry.toml"), joinpath(root, "registry.toml"))
+    cp(joinpath(FIXTURE, "registry.toml"), joinpath(root, "registry.toml"))
     return root, joinpath(root, REC_REL), joinpath(root, REV_REL)
+end
+
+# The registry/1 fixture, copied somewhere it may be converted.
+function v1_copy()
+    root = mktempdir()
+    for e in readdir(FIXTURE_V1)
+        cp(joinpath(FIXTURE_V1, e), joinpath(root, e))
+    end
+    return root
 end
 
 function with_fixture(f)

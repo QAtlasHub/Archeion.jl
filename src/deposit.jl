@@ -231,6 +231,17 @@ function deposit(
     isfile(binding) ||
         error("no binding at $binding; create one with new_binding (once per record)")
     b = TOML.parsefile(binding)
+    # `new_binding` checked these when it wrote the file, but the file is committed in another
+    # repository and edited by hand; what names a directory here is checked where it is used.
+    is_uuid(get(b, "record", nothing)) ||
+        error("$binding: `record` $(repr(get(b, "record", nothing))) is not a UUID (R5)")
+    is_uuid(get(b, "project", nothing)) ||
+        error("$binding: `project` $(repr(get(b, "project", nothing))) is not a UUID (R5)")
+    is_slug(get(b, "slug", nothing)) ||
+        error("$binding: `slug` $(repr(get(b, "slug", nothing))) is not a slug (R6)")
+    get(b, "kind", "report") in RECORD_KINDS || error(
+        "$binding: `kind` $(repr(b["kind"])) is not one of $(join(RECORD_KINDS, ", "))"
+    )
     reg = registry_of(binding)
     id = b["record"]
     r0, _ = validate(reg)
@@ -348,7 +359,7 @@ function deposit(
     pushed = false
     if push
         if git(reg, "push", "-q"; ok=true) === nothing
-            git(reg, "pull", "-q", "--rebase")            # someone else deposited meanwhile
+            rebase_onto_remote!(reg)                      # someone else deposited meanwhile
             git(reg, "push", "-q")
         end
         pushed = true

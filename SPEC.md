@@ -107,6 +107,7 @@ disagreement, and a writer that meets a conflict in it — the one file every de
 | `uuid` | yes | R5; generated once, never changed |
 | `name` | yes | display name; may change |
 | `created` | yes | R7 time |
+| `migrated` | no | written by a conversion, never by hand: `spec` and `id` are what this file was under the older format, `at` is R7 time when it was converted (§11) |
 
 ## 4. `record.toml`
 
@@ -118,8 +119,10 @@ disagreement, and a writer that meets a conflict in it — the one file every de
 | `project` | yes | the UUID of a project in `projects/` |
 | `title` | yes | what the record is called in the index; the current revision's title is what a reader sees |
 | `created` | yes | R7 time; its UTC year equals the directory's year |
+| `migrated` | no | written by a conversion, never by hand: `spec`, `id` and `project` are what this record was under the older format, `at` is R7 time when it was converted (§11) |
 
-A record file is written once. Anything that changes later is an event.
+A record file is written once. Anything that changes later is an event — or a conversion, which is
+the one thing that may rewrite it, and says so in `migrated`.
 
 ## 5. Revisions
 
@@ -312,5 +315,18 @@ only those of §§1-4:
 Revisions, events, provenance and preservation are unchanged, so **converting is renaming and
 rewriting four fields**: each record directory loses its date and identifier, each project file is
 named by its slug, `id` becomes `uuid` everywhere it appears, and the index is generated. A
-revision's own files are untouched, `SHA256SUMS` included — the conversion never opens one. A tree
-is never a mixture: the `spec` of a registry is the `spec` of every file in it.
+revision's own files are never written, `SHA256SUMS` included; the conversion only reads one, to
+recover the title `registry/1` did not store on the record. A tree is never a mixture: the `spec`
+of a registry is the `spec` of every file in it.
+
+That last sentence has one exception, and it is bounded. A revision frozen under `registry/1` says
+so in its own `entry.toml`, and names the identifiers of that day — and it may not be rewritten,
+because its `SHA256SUMS` covers that file (§5.2). So a converted project or record keeps a
+`migrated` table saying what it was, and a reader accepts those older values **in a revision or
+event dated before `migrated.at`, and nowhere else**. Anything frozen after the conversion is
+`registry/2` like the rest of the tree.
+
+A conversion is all or nothing. A half-converted tree is neither version, so a converter settles
+every identifier, slug and collision before it renames anything, and a registry under version
+control is converted only from a clean working tree — so that what a failure leaves behind is one
+`git checkout` from what was there before.

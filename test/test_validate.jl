@@ -93,6 +93,14 @@
             ),
         ),
         (
+            "one project uuid in two files",
+            "names more than one project",
+            (root, rec, rev) -> cp(
+                joinpath(root, "projects", "demo.toml"),
+                joinpath(root, "projects", "demo-again.toml"),
+            ),
+        ),
+        (
             "a record whose project does not exist",
             "is not a project in projects/",
             (root, rec, rev) -> rm(joinpath(root, "projects", "demo.toml")),

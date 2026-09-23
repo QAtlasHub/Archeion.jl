@@ -68,6 +68,44 @@ function check_source_published(repo)
     return true
 end
 
+"""
+    rebase_onto_remote!(reg)
+
+Put the deposit just committed in `reg` on top of whatever the remote gained meanwhile, and leave
+the registry validating. `registry.toml` is the one file every deposit writes, so two deposits made
+at once collide there — and because the index is derived, that collision has an answer that needs
+no judgement: take either side and regenerate it from the tree (§2.1). A conflict in anything else
+is a real one, so the rebase is abandoned and the registry is left as it was, for a person.
+"""
+function rebase_onto_remote!(reg)
+    git(reg, "pull", "--quiet", "--rebase"; ok=true) === nothing || return nothing
+    conflicted = split(
+        something(git(reg, "diff", "--name-only", "--diff-filter=U"; ok=true), ""),
+        '\n';
+        keepempty=false,
+    )
+    if conflicted != [INDEX_FILE]
+        git(reg, "rebase", "--abort"; ok=true)
+        error(
+            "$reg could not be rebased onto its remote" *
+            (isempty(conflicted) ? "" : "; $(join(conflicted, ", ")) conflict") *
+            ". The deposit is committed here; resolve it and push yourself.",
+        )
+    end
+    git(reg, "checkout", "--ours", "--", INDEX_FILE)   # either side; the tree decides below
+    reindex!(reg)
+    git(reg, "add", "--", INDEX_FILE)
+    withenv("GIT_EDITOR" => "true") do
+        return git(reg, "rebase", "--continue")
+    end
+    r, _ = validate(reg)
+    isempty(r.errors) || error(
+        "after rebasing onto the remote the registry does not validate:\n  " *
+        join(r.errors, "\n  "),
+    )
+    return nothing
+end
+
 # The branch a deposit goes on when it is published as a pull request. One branch per deposit: two
 # deposits made before either is merged stay separate pull requests.
 deposit_branch(rev) = "deposit/$rev"
@@ -86,12 +124,7 @@ function publish_revision!(reg, rev, title; remote::Symbol=:pr, gh="gh")
     remote === :local && return (; pushed=false, branch=nothing, pr=nothing)
     if remote === :push
         if git(reg, "push", "--quiet"; ok=true) === nothing
-            git(reg, "pull", "--quiet", "--rebase")       # someone else deposited meanwhile
-            r, _ = validate(reg)
-            isempty(r.errors) || error(
-                "after rebasing onto the remote the registry does not validate:\n  " *
-                join(r.errors, "\n  "),
-            )
+            rebase_onto_remote!(reg)                      # someone else deposited meanwhile
             git(reg, "push", "--quiet")
         end
         return (;
