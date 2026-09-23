@@ -76,11 +76,11 @@ deposit_branch(rev) = "deposit/$rev"
     publish_revision!(reg, rev, title; remote = :pr) -> NamedTuple
 
 Get the commit `deposit` just made in `reg` to the shared repository. `:pr` pushes it on a branch
-of its own and opens a pull request (needs `gh`), `:push` pushes the current branch, rebasing onto
+of its own and opens a pull request with `gh`, `:push` pushes the current branch, rebasing onto
 the remote once if it moved and revalidating before it does, and `:local` leaves it alone.
 Returns what happened — `pushed`, the `branch`, and the `pr` URL when there is one.
 """
-function publish_revision!(reg, rev, title; remote::Symbol=:pr)
+function publish_revision!(reg, rev, title; remote::Symbol=:pr, gh="gh")
     remote in (:pr, :push, :local) ||
         error("remote must be :pr, :push or :local (got $(repr(remote)))")
     remote === :local && return (; pushed=false, branch=nothing, pr=nothing)
@@ -100,14 +100,15 @@ function publish_revision!(reg, rev, title; remote::Symbol=:pr)
     end
     branch = deposit_branch(rev)
     git(reg, "push", "--quiet", "--set-upstream", "origin", "HEAD:refs/heads/$branch")
-    return (; pushed=true, branch, pr=open_pull_request(reg, branch, title))
+    return (; pushed=true, branch, pr=open_pull_request(reg, branch, title; gh=gh))
 end
 
 # `gh` is how a pull request is opened; without it the branch is pushed and the caller is told what
-# to run. A registry that requires review is the common case, so this is not a failure.
-function open_pull_request(reg, branch, title)
-    if Sys.which("gh") === nothing
-        @info "gh is not installed; the branch is pushed" branch next = "gh pr create --head $branch"
+# to run. A registry that requires review is the common case, so this is not a failure. The
+# executable is a parameter so a test can hand it one that is missing, or one that answers.
+function open_pull_request(reg, branch, title; gh="gh")
+    if Sys.which(gh) === nothing
+        @info "$gh is not installed; the branch is pushed" branch next = "$gh pr create --head $branch"
         return nothing
     end
     out, err = IOBuffer(), IOBuffer()
@@ -115,11 +116,11 @@ function open_pull_request(reg, branch, title)
         "Deposited by Archeion. Merge with a merge commit: revisions cite commits of the " *
         "repositories that rendered them.\n"
     cmd = setenv(
-        `gh pr create --head $branch --title $title --body $body`; dir=abspath(reg)
+        `$gh pr create --head $branch --title $title --body $body`; dir=abspath(reg)
     )
     proc = run(pipeline(ignorestatus(cmd); stdout=out, stderr=err))
     if !success(proc)
-        @warn "gh pr create failed; the branch is pushed" branch reason = strip(
+        @warn "$gh pr create failed; the branch is pushed" branch reason = strip(
             String(take!(err))
         )
         return nothing
