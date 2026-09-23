@@ -326,6 +326,12 @@ because its `SHA256SUMS` covers that file (§5.2). So a converted project or rec
 event dated before `migrated.at`, and nowhere else**. Anything frozen after the conversion is
 `registry/2` like the rest of the tree.
 
+A conversion cannot finish by itself. Whatever names a record from outside the registry — a binding
+in the repository that renders the report (§8) — still holds the identifier of the older format, and
+the registry cannot reach it. So a converter reports **which identifier became which UUID**, and
+those names are updated where they live. A deposit through a binding that still names an old
+identifier is refused, not quietly turned into a second record.
+
 A conversion is all or nothing. A half-converted tree is neither version, so a converter settles
 every identifier, slug and collision before it renames anything, and a registry under version
 control is converted only from a clean working tree — so that what a failure leaves behind is one

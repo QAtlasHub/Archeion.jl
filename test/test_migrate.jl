@@ -245,3 +245,28 @@ end
     @test mentions(errs, "20270101T000000Z") && mentions(errs, "is not this record")
     rm(root; recursive=true)
 end
+
+@testset "migrate: what each identifier became is what a binding needs" begin
+    root = v1_copy()
+    res = Archeion.migrate!(root)
+    rec = TOML.parsefile(joinpath(root, "records", "2026", "logistic-map", "record.toml"))
+    # the map is the conversion's one output nothing else can reconstruct without walking the tree
+    @test res.ids["r_4aehb2y5"] == rec["uuid"]
+    @test res.ids["p_z7ne42dt"] == rec["project"]
+    @test all(Archeion.is_uuid, values(res.ids))
+    rm(root; recursive=true)
+
+    root = v1_copy()                                     # and the command says so
+    log = tempname()
+    open(log, "w") do io
+        @test redirect_stdout(() -> Archeion.main(["migrate", root]), io) == 0
+    end
+    said = read(log, String)
+    @test occursin("update every binding", said)
+    @test occursin(
+        "r_4aehb2y5 -> " *
+        TOML.parsefile(joinpath(root, "records", "2026", "logistic-map", "record.toml"))["uuid"],
+        said,
+    )
+    rm(root; recursive=true)
+end

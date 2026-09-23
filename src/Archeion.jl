@@ -140,6 +140,12 @@ function (@main)(args)
         n = migrate!(root)
         println("converted $(n.projects) project(s) and $(n.records) record(s) to $SPEC")
         foreach(s -> println("  ", s), n.summary)
+        # Bindings live in the repositories that render the reports, so this is the one thing the
+        # conversion cannot finish by itself. Print what to put in them.
+        println("\nwhat each identifier became — update every binding that names one:")
+        for old in sort(collect(keys(n.ids)))
+            println("  ", old, " -> ", n.ids[old])
+        end
         return 0
     elseif cmd == "validate"
         r, summary = validate(root)
