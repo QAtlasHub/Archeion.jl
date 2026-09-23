@@ -1,5 +1,23 @@
 # deposit: revisions go in through a binding, and a revision that does not validate never lands.
 
+@testset "deposit: `repro` puts named files under repro/" begin
+    with_git_fixture() do root, binding, src
+        script = joinpath(mktempdir(), "run.jl")
+        write(script, "# the script that made it\n")
+        res = deposit(
+            binding;
+            src...,
+            doc=DOC,
+            source_repo=root,
+            push=false,
+            repro=Dict("scripts/run.jl" => script),
+        )
+        @test read(joinpath(res.dir, "repro", "scripts", "run.jl"), String) ==
+            "# the script that made it\n"
+        @test isempty(first(Archeion.validate(root)).errors)
+    end
+end
+
 @testset "deposit: a cleanup that fails keeps the failure it was cleaning up after" begin
     parent = mktempdir()
     dir = joinpath(parent, "rev")
