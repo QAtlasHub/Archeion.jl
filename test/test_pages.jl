@@ -120,3 +120,34 @@ end
     @test occursin("branches: [main]", yml) && occursin("/tmp/s", yml)
     rm(root; recursive=true)
 end
+
+@testset "pages --site: the directory it is read from survives being rebuilt" begin
+    # The swap in site.yml, run for real three times. Twice is not enough: the first build has
+    # nothing to displace and the second displaces a directory whose `.previous` is not yet there.
+    # Only the third meets a `.previous` that already exists — which is where `mv a b` stops
+    # meaning "rename" and starts meaning "put a inside b".
+    parent = mktempdir()
+    out = joinpath(parent, "reg")
+    yml = Archeion._site_yml("9.9.9", "master", "[self-hosted, x]", out)
+    # the shell the workflow runs — the lines of its `run: |` block, with the build replaced by
+    # something that writes a page, so the swap around it is what is being measured
+    lines = split(yml, '\n')
+    from = findfirst(l -> startswith(l, " "^8 * "run: |"), lines) + 1
+    body = [
+        if occursin("-m Archeion build", l)
+            "mkdir -p \"$out.new\" && cat > \"$out.new/index.html\""
+        else
+            replace(l, r"^ {10}" => "")
+        end for l in lines[from:end] if startswith(l, " "^10)
+    ]
+    script = joinpath(parent, "swap.sh")
+    write(script, join(body, "\n") * "\n")
+
+    for i in 1:3
+        run(pipeline(`bash $script`; stdin=IOBuffer("build $i")))
+        @test read(joinpath(out, "index.html"), String) == "build $i"
+        @test !ispath(joinpath("$out.previous", "reg"))       # nothing nested
+    end
+    @test sort(readdir(parent)) == ["reg", "reg.previous", "swap.sh"]
+    rm(parent; recursive=true)
+end

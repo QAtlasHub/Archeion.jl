@@ -32,7 +32,7 @@ function _pages_yml(version, branch)
     return """
 name: pages
 
-# The catalogue built from the registry/1 tree. The site is derived and never committed: every
+# The catalogue built from the registry tree. The site is derived and never committed: every
 # push rebuilds it with the Archeion version `registry.toml` names. Written by
 # `julia -m Archeion pages`; run that again when the version changes.
 on:
@@ -117,6 +117,10 @@ $(_setup_steps(version))
       - name: Build into the directory it is read from
         run: |
           set -eu
+          # Both scratch names are cleared first: `mv a b` puts a *inside* b when b is a
+          # directory, so a previous build left where it stands would nest the next one
+          # inside it, and the one after that would fail outright.
+          rm -rf "$out.new" "$out.previous"
           julia --startup-file=no --project=archeion-env -m Archeion build . "$out.new"
           if [ -d "$out" ]; then mv "$out" "$out.previous"; fi
           mv "$out.new" "$out"
