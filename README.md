@@ -19,6 +19,29 @@ julia -m Archeion validate path/to/registry    # exit 1 on any error
 julia -m Archeion build path/to/registry       # exit non-zero if a link in the site is broken
 ```
 
+## Reading it
+
+A registry is files, so the plainest way to read one is to open them. The catalogue — everything
+indexed, each record's revisions, each revision's report — is what `build` writes, and it is
+derived: never committed, rebuilt from the tree whenever it is wanted.
+
+**As a site (the usual way).** One command writes the workflows that build and publish it on every
+push, pinned to the Archeion version that wrote them:
+
+```sh
+julia -m Archeion pages path/to/registry       # then: Settings -> Pages -> Source: GitHub Actions
+```
+
+A **private repository's Pages site is public** on every plan but Enterprise Cloud. For a registry
+that must not be, read it locally instead:
+
+```sh
+julia -m Archeion build path/to/registry       # open _site/index.html
+```
+
+or serve `_site` from somewhere access is controlled. Nothing has to be running for the files to
+be read, which is the point.
+
 ## Adding a result
 
 A record is created once and gets revisions after that. The two are separate operations, so a
