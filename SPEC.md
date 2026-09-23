@@ -180,14 +180,16 @@ key	file	read_sha256	result_sha256	observation	completed_at
   when kept, at `repro/blobs/<first 32 of the file's SHA-256>`. Paths use 32 hex (128 bits) to stay
   within R3; the files keep the full digests, and a checker compares full digests.
 - An observation's `binding` is how far that process's loaded code was checked against its
-  snapshot: `loaded-matches-disk` (every loaded source of the checked roots matched it),
-  `loaded-differs-from-disk`, or `unverified` (with `binding_reasons`). An observation is a disk
-  state; only its binding speaks about the code that ran, and `unverified` claims nothing.
+  snapshot: `loaded-differs-from-disk` (a loaded package's sources are not what the snapshot
+  holds) or `unverified` (with `binding_reasons`). An observation is a disk state, and
+  `unverified` claims nothing about the code that ran. A `loaded-matches-disk`, which earlier
+  data stores wrote, is read and counted as `unverified`: a match cannot be shown from inside the
+  computing process, since code defined outside a package leaves no trace to check it against.
 - A depositor refuses a row whose `read_sha256` differs from its `result_sha256` unless told to let
   it in, which is then recorded as `allow_mismatch = true`. A validator requires the summary to match
   the table, every named token to be held or listed as missing, every binding to be one of the three
-  values, and every snapshot to hash to its id; it warns on rows that read other bytes and on
-  missing observations.
+  values, and every snapshot to hash to its id; it warns on rows that read other bytes, on
+  missing observations, and on every `loaded-matches-disk`.
 - When `provenance.toml` exists, `repro/observations/`, `repro/sources/` and `repro/blobs/` are its
   own.
 

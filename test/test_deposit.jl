@@ -1,5 +1,69 @@
 # deposit: revisions go in through a binding, and a revision that does not validate never lands.
 
+@testset "deposit: `repro` puts named files under repro/" begin
+    with_git_fixture() do root, binding, src
+        script = joinpath(mktempdir(), "run.jl")
+        write(script, "# the script that made it\n")
+        res = deposit(
+            binding;
+            src...,
+            doc=DOC,
+            source_repo=root,
+            push=false,
+            repro=Dict("scripts/run.jl" => script),
+        )
+        @test read(joinpath(res.dir, "repro", "scripts", "run.jl"), String) ==
+            "# the script that made it\n"
+        @test isempty(first(Archeion.validate(root)).errors)
+    end
+end
+
+@testset "deposit: a cleanup that fails keeps the failure it was cleaning up after" begin
+    parent = mktempdir()
+    dir = joinpath(parent, "rev")
+    mkpath(dir)
+    write(joinpath(dir, "entry.toml"), "x")
+    chmod(parent, 0o500)                                  # the entry cannot be unlinked
+    try
+        @test_logs (:warn, r"could not remove") Archeion.discard!(dir)
+        @test isdir(dir)                                  # and the caller still rethrows its own
+    finally
+        chmod(parent, 0o700)
+        rm(parent; recursive=true, force=true)
+    end
+end
+
+@testset "deposit: the file a render returns stands for its directory" begin
+    with_git_fixture() do root, binding, src
+        res = deposit(
+            binding;
+            gallery=joinpath(src.gallery, "index.html"),
+            agent=joinpath(src.agent, "agent.json"),
+            doc=DOC,
+            source_repo=root,
+            push=false,
+        )
+        @test isfile(joinpath(res.dir, "gallery", "index.html"))
+        @test isfile(joinpath(res.dir, "agent", "agent.json"))
+        @test isempty(first(Archeion.validate(root)).errors)
+    end
+    with_git_fixture() do root, binding, src
+        e = attempt(
+            () -> deposit(
+                binding;
+                gallery=joinpath(root, "no-such-dir"),
+                agent=src.agent,
+                doc=DOC,
+                source_repo=root,
+                push=false,
+            ),
+        )
+        @test e isa ErrorException && occursin("is not a directory", e.msg)
+        incoming = joinpath(root, "_incoming")
+        @test commits(root) == 1 && (!isdir(incoming) || isempty(readdir(incoming)))
+    end
+end
+
 @testset "deposit" begin
     with_git_fixture() do root, binding, src
         res = deposit(binding; src..., doc=DOC, source_repo=root, push=false)

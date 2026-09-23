@@ -7,7 +7,7 @@ using DataVault
 # contents kept), and one observation of it with the given binding.
 const OBS = "obs1-20260922T000000Z-1a2b-0123456789abcdef"
 
-function synthetic_store(; binding="loaded-matches-disk")
+function synthetic_store(; binding="unverified", version=1)
     dir = mktempdir()
     blob = "module P\nend\n"
     bsha = bytes2hex(sha256(blob))
@@ -24,7 +24,8 @@ function synthetic_store(; binding="loaded-matches-disk")
     mkpath(observations)
     write(
         joinpath(observations, "$token.toml"),
-        "token = \"$token\"\nsource = \"$id\"\nbinding = \"$binding\"\nbinding_reasons = []\n",
+        "observation_version = $version\ntoken = \"$token\"\nsource = \"$id\"\n" *
+        "binding = \"$binding\"\nbinding_reasons = []\n",
     )
     return (; dir, observations, sources, token, id, bsha)
 end
@@ -92,7 +93,7 @@ rewrite!(path, f) = write(path, f(read(path, String)))
             "read_differs_from_result" => 0,
             "result_unknown" => 1,
         )
-        @test p["bindings"] == Dict("loaded-matches-disk" => 2, "unknown" => 1)
+        @test p["bindings"] == Dict("unverified" => 2, "unknown" => 1)
         @test p["observations"] == [t] && isempty(p["missing_observations"])
         rows = readlines(joinpath(res.dir, "provenance", "points.tsv"))
         @test first.(split.(rows[2:end], '\t')) == ["k1", "k2", "k3"]
@@ -108,9 +109,13 @@ rewrite!(path, f) = write(path, f(read(path, String)))
         Archeion.build(root, site)
         rec = relpath(dirname(dirname(res.dir)), root)
         page = read(joinpath(site, rec, "index.html"), String)
+        served = joinpath(site, relpath(res.dir, root))
+        @test isfile(joinpath(served, "provenance.toml")) &&
+            isdir(joinpath(served, "gallery"))
+        @test !ispath(joinpath(served, "provenance")) && !ispath(joinpath(served, "repro"))
         @test occursin("3 points: 2 read as recorded", page) &&
             occursin("1 unrecorded", page)
-        @test occursin("code loaded-matches-disk 2, unknown 1", page)
+        @test occursin("code unknown 1, unverified 2", page)
         rm(dirname(site); recursive=true)
     end
 end
@@ -151,6 +156,24 @@ end
     end
 end
 
+@testset "provenance: a match is not taken at its word" begin
+    store = synthetic_store(; binding="loaded-matches-disk")
+    deposited([point("k1", store.token)]; store) do root, res
+        r, _ = Archeion.validate(root)
+        @test isempty(r.errors)
+        @test mentions(r.warnings, "it is counted as `unverified`")
+        p = TOML.parsefile(joinpath(res.dir, "provenance.toml"))
+        @test p["bindings"] == Dict("unverified" => 1)       # never counted as a match
+    end
+    store = synthetic_store(; binding="loaded-differs-from-disk")
+    deposited([point("k1", store.token)]; store) do root, res
+        r, _ = Archeion.validate(root)
+        @test isempty(r.warnings)
+        @test TOML.parsefile(joinpath(res.dir, "provenance.toml"))["bindings"] ==
+            Dict("loaded-differs-from-disk" => 1)
+    end
+end
+
 @testset "provenance: a name that is not a token never becomes a path" begin
     deposited([point("k1", "../../escape")]) do root, res
         @test res isa ErrorException && occursin("not an observation token", res.msg)
@@ -182,7 +205,9 @@ end
 
     v = broken() do d
         obs = joinpath(d, "repro", "observations", "$t.toml")
-        rewrite!(obs, s -> replace(s, "loaded-matches-disk" => "trust-me"))
+        rewrite!(
+            obs, s -> replace(s, "binding = \"unverified\"" => "binding = \"trust-me\"")
+        )
     end
     @test mentions(v.errors, "\"trust-me\" is not one of")
     @test mentions(v.errors, "`bindings` does not match")

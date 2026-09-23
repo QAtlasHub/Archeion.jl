@@ -10,6 +10,11 @@ const POINT_COLUMNS = (
     "key", "file", "read_sha256", "result_sha256", "observation", "completed_at"
 )
 const BINDINGS = Set(["loaded-matches-disk", "loaded-differs-from-disk", "unverified"])
+
+# A match cannot be shown from inside the computing process (code defined in a script, a closure,
+# or a method added to Base leaves no trace to check), and DataVault 0.8.6 no longer writes one. An
+# earlier observation's `loaded-matches-disk` is therefore counted as what it can support.
+_counted(binding) = binding == "loaded-matches-disk" ? "unverified" : binding
 const POINTS_FILE = "provenance/points.tsv"
 
 # Content-addressed names are cut to 32 hex (128 bits) in paths, so they stay within R3 (64 per
@@ -112,7 +117,7 @@ function write_provenance!(
         push!(present, t)
         _copy_if_absent(src, joinpath(revdir, "repro", "observations", "$t.toml"))
         obs = TOML.parsefile(src)
-        binding_of_token[t] = get(obs, "binding", "unknown")
+        binding_of_token[t] = _counted(get(obs, "binding", "unknown"))
         if source_contents        # the Project/Manifest the process ran with, when it stored them
             for sha in values(get(obs, "environment", Dict()))
                 blob = joinpath(sources_dir, "blobs", string(sha))
@@ -239,7 +244,13 @@ function check_provenance(r, revdir)
         obs = load(r, obs_path)
         obs === nothing && continue
         binding = get(obs, "binding", nothing)
-        binding_of_token[t] = string(binding)
+        binding == "loaded-matches-disk" && warn!(
+            r,
+            obs_path,
+            "`loaded-matches-disk` cannot rule out code defined outside a package (a script, a " *
+            "closure, a method added to Base); it is counted as `unverified`",
+        )
+        binding_of_token[t] = _counted(string(binding))
         binding in BINDINGS || err!(
             r,
             obs_path,
