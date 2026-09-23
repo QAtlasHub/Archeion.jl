@@ -87,3 +87,24 @@ end
     @test Archeion.build(root).records == 0
     rm(root; recursive=true)
 end
+
+@testset "init: the command, and what it tells you to do next" begin
+    root = joinpath(mktempdir(), "lab-notes")     # a directory that does not exist yet
+    out = IOBuffer()
+    code = redirect_stdout(
+        () -> Archeion.main(["init", root, "--title=Lab Notes", "--tagline=as we go"]),
+        devnull,
+    )
+    @test code == 0
+    toml = TOML.parsefile(joinpath(root, "registry.toml"))
+    @test toml["name"] == "lab-notes"             # named after the directory unless told otherwise
+    @test toml["site"]["title"] == "Lab Notes" && toml["site"]["tagline"] == "as we go"
+    @test isempty(first(Archeion.validate(root)).errors)
+
+    said = sprint() do io
+        Archeion.init_instructions(io, root, ["registry.toml"], "lab-notes")
+    end
+    @test occursin("registry.toml", said) && occursin("[site]", said)
+    @test occursin("new_binding", said) && occursin("publish", said)
+    rm(dirname(root); recursive=true)
+end
