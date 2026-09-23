@@ -88,6 +88,13 @@ end
     end
 end
 
+@testset "sync!: a remote that cannot be reached is worked around, not hidden" begin
+    with_remote() do root, binding, src, remote, clone
+        run(`git -C $clone remote set-url origin $(joinpath(remote, "gone"))`)
+        @test_logs (:warn, r"could not fetch") Archeion.sync!(clone)
+    end
+end
+
 @testset "check_source_published: a commit only this clone has is named" begin
     with_remote() do root, binding, src, remote, clone
         run(`git -C $clone remote set-head origin master`)
@@ -141,6 +148,28 @@ end
 @testset "check_source_published: a repository with no remote says so" begin
     with_git_fixture() do root, binding, src
         @test_logs (:warn, r"no origin/HEAD") (@test !Archeion.check_source_published(root))
+    end
+end
+
+@testset "publish_revision!: with no tool to open the request, the branch still goes up" begin
+    with_shared_registry() do root, binding, src, remote, clone
+        res = deposit(binding; src..., doc=DOC, source_repo=root, push=false)
+        sent = @test_logs (:info, r"is not installed") Archeion.publish_revision!(
+            root, res.rev, "t"; remote=:pr, gh="gh-that-is-not-installed"
+        )
+        @test sent.pushed && sent.pr === nothing
+        @test occursin(basename(res.dir), tracked(remote, "deposit/$(res.rev)"))
+    end
+end
+
+@testset "publish_revision!: the request it opened is what is returned" begin
+    with_shared_registry() do root, binding, src, remote, clone
+        fake = joinpath(mktempdir(), "gh")
+        write(fake, "#!/bin/sh\necho https://example.invalid/pr/1\n")
+        chmod(fake, 0o755)
+        res = deposit(binding; src..., doc=DOC, source_repo=root, push=false)
+        sent = Archeion.publish_revision!(root, res.rev, "t"; remote=:pr, gh=fake)
+        @test sent.pr == "https://example.invalid/pr/1"
     end
 end
 
