@@ -224,6 +224,15 @@ function provenance_line(p)
     return join(parts, " · ")
 end
 
+# A record says what it holds; only a kind other than the default is worth a word on the page.
+function kind_note(record)
+    return if get(record, "kind", "report") == "report"
+        ""
+    else
+        " · " * html_escape(string(get(record, "kind", "report")))
+    end
+end
+
 function record_page(name, projects, rec)
     rev = shown(rec)
     yanked = subjects(rec.events, "yank")
@@ -278,7 +287,7 @@ function record_page(name, projects, rec)
     end
     body = """<div class="mut"><a href="$up/index.html">$(html_escape(name))</a> / $(html_escape(proj))</div>
     <h1>$(html_escape(rev.entry["doc"]["title"]))</h1><div class="mut">record <code>$(html_escape(rec.record["id"]))</code>
-    · created $(day(rec.record["created"]))</div><div class="state">$stline</div>
+    · created $(day(rec.record["created"]))$(kind_note(rec.record))</div><div class="state">$stline</div>
     <p><a href="revisions/$(html_escape(rev.name))/gallery/index.html">Open the report →</a></p>
     <h2>Revisions</h2><div class="wrap"><table><tr><th>revision</th><th>what</th><th>files</th></tr>
     $(String(take!(rows)))</table></div>

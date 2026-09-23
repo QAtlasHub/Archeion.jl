@@ -101,6 +101,16 @@
         end
     end
 
+    @testset "a kind registry/1 does not know is kept, with a warning" begin
+        v = validated() do root, rec, rev
+            edit!(joinpath(rec, "record.toml"), "kind = \"report\"", "kind = \"diary\"")
+            edit!(entry(rev), "kind = \"report\"", "kind = \"diary\"")
+            Archeion.write_sums(rev)
+        end
+        @test isempty(v.errors) && mentions(v.warnings, "record kind `diary`")
+        @test length(v.summary) == 1                   # the record is still there
+    end
+
     @testset "which revision is current (§7.1)" begin
         @test mentions(
             validated((root, rec, rev) -> second_revision!(rec, rev; parent=true)).summary,

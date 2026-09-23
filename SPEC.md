@@ -1,10 +1,16 @@
-# Registry format, version 1 (draft)
+# Registry format, version 1
 
 This file is the format. Archeion.jl is one implementation of it and may be replaced; a registry is
 valid when it satisfies this document, whatever wrote it.
 
-Status: **draft**. Sections 1-9 are normative for `spec = "registry/1"`. Section 10 lists what is
-not decided yet; nothing there may be relied on.
+Status: **stable**. Sections 1-9 are normative for `spec = "registry/1"` and no longer change in
+ways that make a valid registry invalid. Section 10 lists what is not decided yet; nothing there
+may be relied on, and nothing there needs deciding for a registry to be used.
+
+What may still be added to `registry/1`: an optional field, a new event kind, a new value of a
+field whose unknown values already have a defined reading (`record.kind`, `event.kind`, an
+observation's `binding`). What may not: a new required field, a changed meaning, a changed path
+rule. Those are `registry/2`, and a reader of `registry/2` keeps reading `registry/1`.
 
 ## 1. Names and paths
 
@@ -72,7 +78,7 @@ records/<YYYY>/<YYYY-MM-DD>-<slug>-<record-id>/
 |---|---|---|
 | `spec` | yes | `"registry/1"` |
 | `id` | yes | the record identifier; equals the directory name's suffix |
-| `kind` | yes | `"report"` (for now the only kind; see §10) |
+| `kind` | yes | `"report"` (a rendered result) or `"note"` (a lab note). A reader that does not know a kind shows the record as it is, and does not drop it |
 | `project` | yes | a project identifier that exists in `projects/` |
 | `created` | yes | R7 time; its UTC date equals the directory's date |
 
@@ -182,7 +188,9 @@ key	file	read_sha256	result_sha256	observation	completed_at
 - An observation's `binding` is how far that process's loaded code was checked against its
   snapshot: `loaded-differs-from-disk` (a loaded package's sources are not what the snapshot
   holds) or `unverified` (with `binding_reasons`). An observation is a disk state, and
-  `unverified` claims nothing about the code that ran. A `loaded-matches-disk`, which earlier
+  `unverified` claims nothing about the code that ran. **A binding a reader does not know is read
+  as `unverified`**, so a data store may add one (a process launched from the snapshot, §10)
+  without a new spec version. A `loaded-matches-disk`, which earlier
   data stores wrote, is read and counted as `unverified`: a match cannot be shown from inside the
   computing process, since code defined outside a package leaves no trace to check it against.
 - A depositor refuses a row whose `read_sha256` differs from its `result_sha256` unless told to let
@@ -238,9 +246,6 @@ the catalogue, search indexes, the current revision of a record, counts.
 
 ## 10. Not decided (not normative)
 
-- **Experiments and notes.** Whether a lab notebook is a separate object or a record of another kind.
-- **Identifier length.** Eight characters (40 bits) is readable; a validator rejects collisions. A
-  full UUID is the alternative.
 - **Starting processes from a snapshot.** A fourth binding, `launched-from-snapshot`, for a
   process whose code was loaded from a held snapshot rather than checked against one (§5.5).
 - **Source capture for a dirty tree.** A git commit object built from a temporary index, or a

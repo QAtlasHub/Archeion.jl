@@ -28,18 +28,21 @@ end
 # ── binding ───────────────────────────────────────────────────────────────────────────────────
 
 """
-    new_binding(path; registry, project, slug) -> record id
+    new_binding(path; registry, project, slug, kind = "report") -> record id
 
 Choose a new record identifier and write the binding file at `path`. Refuses if `path` exists: a
 binding is created once and committed, and every later `deposit` through it adds a revision to the
-same record. `registry` is stored relative to the binding file's directory.
+same record. `registry` is stored relative to the binding file's directory. `kind` is what the
+record holds — `"report"` for a rendered result, `"note"` for a lab note — and is fixed with the
+record, because a record answers one question in one way (§4).
 """
-function new_binding(path; registry, project, slug)
+function new_binding(path; registry, project, slug, kind="report")
     ispath(path) &&
         error("$path exists; a binding is created once. Use another path for a new record.")
     occursin(r"^[a-z0-9]+(-[a-z0-9]+)*$", slug) ||
         error("slug must be lower-case words joined by `-`")
     occursin(PROJECT_ID, project) || error("$project is not a project identifier")
+    kind in RECORD_KINDS || error("kind must be one of $(sort(collect(RECORD_KINDS)))")
     isfile(joinpath(registry, "projects", "$project.toml")) ||
         error("project $project is not in $(joinpath(registry, "projects"))")
     id = "r_" * token(8)
@@ -53,6 +56,7 @@ function new_binding(path; registry, project, slug)
                 "project" => project,
                 "record" => id,
                 "slug" => slug,
+                "kind" => kind,
             );
             sorted=true,
         )
@@ -170,9 +174,12 @@ function copy_tree(src, dest)
     end
 end
 
+# §5.2: every file of the revision except SHA256SUMS itself, which a rewrite would otherwise list
+# with the digest it had before this call.
 function write_sums(revdir)
     files = sort([
-        relpath(joinpath(d, f), revdir) for (d, _, fs) in walkdir(revdir) for f in fs
+        relpath(joinpath(d, f), revdir) for (d, _, fs) in walkdir(revdir) for
+        f in fs if relpath(joinpath(d, f), revdir) != "SHA256SUMS"
     ])
     open(joinpath(revdir, "SHA256SUMS"), "w") do io
         for f in files
@@ -226,6 +233,13 @@ function deposit(
     recdir = find_record(reg, id)
     frozen = utcnow()
     new_record = recdir === nothing
+    # What the record holds is the record's, not the revision's: an existing record keeps the kind
+    # it was created with, and a binding written before kinds existed means "report".
+    kind = if new_record
+        get(b, "kind", "report")
+    else
+        get(TOML.parsefile(joinpath(recdir, "record.toml")), "kind", "report")
+    end
     if new_record
         recdir = joinpath(
             reg,
@@ -236,7 +250,7 @@ function deposit(
         record = Dict{String,Any}(
             "spec" => SPEC,
             "id" => id,
-            "kind" => "report",
+            "kind" => kind,
             "project" => b["project"],
             "created" => frozen,
         )
@@ -267,9 +281,8 @@ function deposit(
     entry = Dict{String,Any}(
         "spec" => SPEC,
         "parents" => collect(parents),
-        "id" => Dict(
-            "project" => b["project"], "record" => id, "rev" => rev, "kind" => "report"
-        ),
+        "id" =>
+            Dict("project" => b["project"], "record" => id, "rev" => rev, "kind" => kind),
         "time" => Dict("frozen" => frozen),
         "doc" => Dict{String,Any}("title" => doc.title, "status" => doc.status),
         "anchors" =>
