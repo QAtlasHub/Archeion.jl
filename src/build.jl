@@ -89,7 +89,9 @@ const CSS = """
    Pinax renders light, and a dark catalogue in front of light reports is a worse seam than any
    shade. */
 :root{--bg:#fafafa;--fg:#24292f;--mut:#57606a;--line:#e2e5e9;--card:#fff;--acc:#0366d6;
---soft:#f6f8fa;--warn:#9a6700;--bad:#a40e26;--ok:#1a7f37}
+--soft:#f6f8fa;--warn:#9a6700;--bad:#a40e26;--ok:#1a7f37;
+/* the contribution graph's five steps, empty to busiest */
+--l0:#ebedf0;--l1:#9be9a8;--l2:#40c463;--l3:#30a14e;--l4:#216e39}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
 font:16px/1.5 system-ui,sans-serif}
 main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}a{color:var(--acc)}
@@ -113,10 +115,23 @@ th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertic
 .yanked td{text-decoration:line-through;color:var(--mut)}.wrap{overflow-x:auto}
 .event{border-left:3px solid var(--line);padding:4px 10px;margin:8px 0}
 .event pre{white-space:pre-wrap;font:inherit;margin:4px 0 0}
-.bars{display:flex;align-items:flex-end;gap:3px;height:70px;margin:10px 0 4px}
-.bar{flex:1;max-width:28px;display:flex;flex-direction:column;justify-content:flex-end;
-height:100%;text-align:center}.bar>div{background:var(--acc);border-radius:2px 2px 0 0;min-height:2px}
-.bar span{font-size:.7rem;color:var(--mut)}
+/* the contribution calendar, as GitHub draws it: 10px cells, 3px between them, labels in the
+   first column and the first row */
+.ContributionCalendar{overflow-x:auto;margin:10px 0 4px}
+.ContributionCalendar-grid{border-collapse:separate;width:auto;font-size:.7rem}
+.ContributionCalendar-label{color:var(--mut);font-size:.7rem;padding:0;border:0;
+white-space:nowrap}
+.ContributionCalendar-day{width:10px;height:10px;padding:0;border:0;border-radius:2px;
+outline:1px solid rgba(27,31,35,.06);outline-offset:-1px;background:var(--l0)}
+.ContributionCalendar-day[data-level="1"]{background:var(--l1)}
+.ContributionCalendar-day[data-level="2"]{background:var(--l2)}
+.ContributionCalendar-day[data-level="3"]{background:var(--l3)}
+.ContributionCalendar-day[data-level="4"]{background:var(--l4)}
+.ContributionCalendar-footer{display:flex;justify-content:space-between;gap:12px;
+font-size:.75rem;color:var(--mut);margin-top:6px}
+.ContributionCalendar-footer .legend{display:flex;align-items:center;gap:3px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);
+white-space:nowrap;border:0}
 .pick{color:var(--acc)}
 """
 
@@ -211,27 +226,155 @@ function overview(projects, records)
 <th>revisions</th><th>of them</th><th>last frozen</th></tr>$(String(take!(body)))</table></div>"""
 end
 
-# When revisions were frozen, by month, as bars whose height is a count. Twelve months of nothing
-# is itself worth seeing.
-function activity(records)
-    per = Dict{String,Int}()
+# When revisions were frozen, as a contribution calendar — the component ported from GitHub's own,
+# read off https://github.com/users/<login>/contributions: a table whose columns are weeks and rows
+# are the days Sunday through Saturday, `border-spacing: 3px` between 10px cells, month labels
+# spanning the weeks that belong to them, weekday labels present for all seven rows but clipped
+# except Mon/Wed/Fri, `data-level` from 0 to 4 on each day, and the Less-to-More legend. A year of
+# squares says how the work went: a burst before a deadline and three quiet months read differently
+# from a steady line, and a bar per month hides both. Empty days are drawn; that is the point.
+const ACTIVITY_WEEKS = 53
+const MONTH_ABBR = (
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+)
+const MONTH_FULL = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+const DAY_FULL = (
+    "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
+)
+const DAY_ABBR = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+const DAY_SHOWN = (false, true, false, true, false, true, false)   # Mon, Wed, Fri, as GitHub does
+
+# GitHub's thresholds: the days that saw anything, split at the quartiles of their own counts, so
+# the scale follows the work rather than a fixed idea of what "busy" is. A day with nothing is 0.
+function levels_of(per::AbstractDict)
+    active = sort([n for n in values(per) if n > 0])
+    isempty(active) && return Int[]
+    return [active[max(1, ceil(Int, q * length(active)))] for q in (0.25, 0.5, 0.75)]
+end
+
+function level(n, thresholds)
+    n <= 0 && return 0
+    isempty(thresholds) && return 0
+    n <= thresholds[1] && return 1
+    n <= thresholds[2] && return 2
+    n <= thresholds[3] && return 3
+    return 4
+end
+
+# "No contributions on September 21st." is how GitHub says it; ours counts revisions.
+ordinal(d) =
+    if d in (11, 12, 13)
+        "$(d)th"
+    elseif d % 10 == 1
+        "$(d)st"
+    elseif d % 10 == 2
+        "$(d)nd"
+    elseif d % 10 == 3
+        "$(d)rd"
+    else
+        "$(d)th"
+    end
+
+function day_label(n, d)
+    when = "$(MONTH_FULL[Dates.month(d)]) $(ordinal(Dates.day(d)))"
+    n == 0 && return "No revisions on $when."
+    return "$n revision$(n == 1 ? "" : "s") on $when."
+end
+
+function activity(records; today=Dates.today())
+    per = Dict{Date,Int}()
     for rec in records, r in rec.revs
-        m = month(r.entry["time"]["frozen"])
-        isempty(m) || (per[m] = get(per, m, 0) + 1)
+        t = r.entry["time"]["frozen"]
+        t isa DateTime || continue
+        d = Date(t)
+        per[d] = get(per, d, 0) + 1
     end
     isempty(per) && return ""
-    months = sort(collect(keys(per)))
-    top = maximum(values(per))
-    bars = join(
+    # The last column is the week `today` falls in, not the week something last happened.
+    last_day = today + Day(6 - dayofweek(today) % 7)   # Julia counts from Monday; rows are Sun-Sat
+    first_day = last_day - Day(7 * ACTIVITY_WEEKS - 1)
+    thresholds = levels_of(per)
+
+    # A week column belongs to the month its Sunday falls in; the label spans its columns.
+    head = IOBuffer()
+    print(head, """<td style="width: 28px"><span class="sr-only">Day of Week</span></td>""")
+    spans = Tuple{Int,Int}[]
+    for w in 0:(ACTIVITY_WEEKS - 1)
+        m = Dates.month(first_day + Day(7 * w))
+        if isempty(spans) || first(spans[end]) != m
+            push!(spans, (m, 1))
+        else
+            (spans[end] = (m, last(spans[end]) + 1))
+        end
+    end
+    for (m, n) in spans
+        print(
+            head,
+            """<td class="ContributionCalendar-label" colspan="$n" style="position: relative">""",
+            """<span class="sr-only">$(MONTH_FULL[m])</span>""",
+            """<span aria-hidden="true" style="position: absolute; top: 0">$(MONTH_ABBR[m])</span></td>""",
+        )
+    end
+
+    rows = IOBuffer()
+    for wd in 0:6
+        print(
+            rows,
+            """<tr style="height: 10px"><td class="ContributionCalendar-label" style="position: relative">""",
+            """<span class="sr-only">$(DAY_FULL[wd + 1])</span>""",
+            """<span aria-hidden="true" style="clip-path: $(DAY_SHOWN[wd + 1] ? "None" : "Circle(0)"); position: absolute; bottom: -3px">$(DAY_ABBR[wd + 1])</span></td>""",
+        )
+        for w in 0:(ACTIVITY_WEEKS - 1)
+            d = first_day + Day(7 * w + wd)
+            if d > today
+                print(rows, "<td></td>")                # beyond today GitHub leaves the cell out
+                continue
+            end
+            n = get(per, d, 0)
+            l = level(n, thresholds)
+            print(
+                rows,
+                """<td tabindex="0" data-ix="$w" aria-describedby="contribution-graph-legend-level-$l" """,
+                """style="width: 10px" data-date="$(Dates.format(d, "yyyy-mm-dd"))" data-level="$l" """,
+                """role="gridcell" class="ContributionCalendar-day" title="$(html_escape(day_label(n, d)))">""",
+                """<span class="sr-only">$(html_escape(day_label(n, d)))</span></td>""",
+            )
+        end
+        print(rows, "</tr>")
+    end
+
+    legend = join(
         (
-            """<div class="bar" title="$(html_escape(m)): $(per[m]) revision(s)">
-<div style="height:$(round(Int, 100 * per[m] / top))%"></div><span>$(html_escape(m[6:7]))</span></div>"""
-            for m in months
+            """<div style="width: 10px; height: 10px" id="contribution-graph-legend-level-$l" data-level="$l" class="ContributionCalendar-day"></div>"""
+            for l in 0:4
         ),
         "",
     )
-    return """<h2>Activity</h2><div class="bars">$bars</div>
-    <div class="mut">$(first(months)) to $(last(months)), $(sum(values(per))) revision(s)</div>"""
+    within = sum((n for (d, n) in per if first_day <= d <= today); init=0)
+    before = sum(values(per)) - within
+    return """<h2>$within revision(s) in the last year</h2>
+    <div class="ContributionCalendar">
+    <table class="ContributionCalendar-grid" role="grid" aria-readonly="true"
+    style="border-spacing: 3px; overflow: hidden; position: relative">
+    <caption class="sr-only">Contribution Graph</caption>
+    <thead><tr style="height: 13px">$(String(take!(head)))</tr></thead>
+    <tbody>$(String(take!(rows)))</tbody></table>
+    <div class="ContributionCalendar-footer"><span>$(Dates.format(first_day, "yyyy-mm-dd")) to
+    $(Dates.format(today, "yyyy-mm-dd"))$(before > 0 ? ", $before revision(s) before it" : "")</span>
+    <span class="legend">Less$legend More</span></div></div>"""
 end
 
 function index_page(name, projects, records)

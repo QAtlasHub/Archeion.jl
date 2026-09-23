@@ -38,11 +38,13 @@ end
     end
     @test b.res isa NamedTuple
 
-    # the overview: one row per project, and a bar per month that has revisions
-    @test occursin("<h2>Projects</h2>", b.index) && occursin("<h2>Activity</h2>", b.index)
+    # the overview: one row per project, and the calendar of the year up to whatever today is
+    @test occursin("<h2>Projects</h2>", b.index)
+    @test occursin("class=\"ContributionCalendar-grid\"", b.index)
     @test occursin("class=\"pick\" data-project=\"logistic map\"", b.index) ||
         occursin("class=\"pick\"", b.index)
-    @test count("class=\"bar\"", b.index) == 1          # every revision is in one month
+    cells = count("class=\"ContributionCalendar-day\"", b.index)
+    @test 53 * 7 - 6 + 5 <= cells <= 53 * 7 + 5        # a year of days, less this week, plus legend
 
     # the search index: not only the title, but what the record asks, is tagged, and is called,
     # and what was said about it afterwards
