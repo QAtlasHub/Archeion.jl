@@ -259,6 +259,9 @@ function deposit(
     else
         get(TOML.parsefile(joinpath(recdir, "record.toml")), "kind", "report")
     end
+    # The binding's `slug` names a record only when there is not one yet. Afterwards the record's
+    # own directory is the name, and it may be renamed without touching the binding (R6): the two
+    # disagreeing is not a conflict to resolve, because only the UUID resolves anything.
     if new_record
         recdir = joinpath(reg, "records", Dates.format(frozen, "yyyy"), b["slug"])
         ispath(recdir) && error(

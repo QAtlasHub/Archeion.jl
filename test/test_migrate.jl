@@ -214,3 +214,34 @@ end
     @test Archeion.slugify("  --Trailing--  ") == "trailing"
     @test attempt(() -> Archeion.slugify("λ₁")) isa ErrorException   # nothing to name it with
 end
+
+@testset "migrate: an event written before the conversion still names what it named" begin
+    root = v1_copy()
+    old = joinpath(root, "records", "2026", "2026-09-15-logistic-map-r_4aehb2y5")
+    mkpath(joinpath(old, "events"))
+    event(dir, at, id) = write(
+        joinpath(dir, "events", "$(at)-loc-note.toml"),
+        """
+        spec = "registry/1"
+        kind = "comment"
+        at = $(at[1:4])-$(at[5:6])-$(at[7:8])T$(at[10:11]):$(at[12:13]):$(at[14:15])Z
+        [subject]
+        record = "$id"
+        rev = "$REV_NAME"
+        """,
+    )
+    event(old, "20260916T000000Z", "r_4aehb2y5")          # written while registry/1 was the format
+    Archeion.migrate!(root)
+
+    recdir = joinpath(root, "records", "2026", "logistic-map")
+    @test isempty(errors_of(root))                        # the old name still reads, through migrated
+    @test occursin(
+        "r_4aehb2y5",
+        read(joinpath(recdir, "events", "20260916T000000Z-loc-note.toml"), String),
+    )
+
+    event(recdir, "20270101T000000Z", "r_4aehb2y5")       # and the same thing, dated after
+    errs = errors_of(root)
+    @test mentions(errs, "20270101T000000Z") && mentions(errs, "is not this record")
+    rm(root; recursive=true)
+end
