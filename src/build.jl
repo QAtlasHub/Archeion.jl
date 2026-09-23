@@ -25,8 +25,9 @@ stamp(t) = t isa DateTime ? Dates.format(t, "yyyy-mm-dd HH:MM") * "Z" : ""
 function read_registry(root)
     projects = Dict{String,Any}()
     for f in entries(joinpath(root, "projects"))       # `.gitkeep` is not a project
+        endswith(f, ".toml") || continue
         d = TOML.parsefile(joinpath(root, "projects", f))
-        projects[d["id"]] = d
+        projects[string(d["uuid"])] = d
     end
     records = []
     base = joinpath(root, "records")
@@ -246,7 +247,7 @@ end
 # said about it in comments. A search that only sees card titles finds what you already see.
 function searchable(rec, proj)
     e = shown(rec).entry
-    parts = [proj, rec.record["id"], get(rec.record, "kind", "report")]
+    parts = [proj, rec.record["uuid"], get(rec.record, "kind", "report")]
     for r in rec.revs
         push!(parts, r.entry["doc"]["title"], r.name)
         for k in ("question", "claim")
@@ -597,7 +598,7 @@ function record_page(site, projects, rec)
         )
     end
     body = """<div class="mut"><a href="$up/index.html">$(html_escape(site.title))</a> / $(html_escape(proj))</div>
-    <h1>$(html_escape(rev.entry["doc"]["title"]))</h1><div class="mut">record <code>$(html_escape(rec.record["id"]))</code>
+    <h1>$(html_escape(rev.entry["doc"]["title"]))</h1><div class="mut">record <code>$(html_escape(rec.record["uuid"]))</code>
     · created $(day(rec.record["created"]))$(kind_note(rec.record))</div><div class="state">$stline</div>
     <p><a href="revisions/$(html_escape(rev.name))/gallery/index.html">Open the report →</a></p>
     <h2>Revisions</h2><div class="wrap"><table><tr><th>revision</th><th>what</th><th>files</th></tr>

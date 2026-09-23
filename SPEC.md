@@ -1,16 +1,17 @@
-# Registry format, version 1
+# Registry format, version 2
 
 This file is the format. Archeion.jl is one implementation of it and may be replaced; a registry is
 valid when it satisfies this document, whatever wrote it.
 
-Status: **stable**. Sections 1-9 are normative for `spec = "registry/1"` and no longer change in
+Status: **stable**. Sections 1-9 are normative for `spec = "registry/2"` and no longer change in
 ways that make a valid registry invalid. Section 10 lists what is not decided yet; nothing there
-may be relied on, and nothing there needs deciding for a registry to be used.
+may be relied on, and nothing there needs deciding for a registry to be used. Section 11 is how a
+`registry/1` tree is converted, which is the only thing this version does with one.
 
-What may still be added to `registry/1`: an optional field, a new event kind, a new value of a
+What may still be added to `registry/2`: an optional field, a new event kind, a new value of a
 field whose unknown values already have a defined reading (`record.kind`, `event.kind`, an
 observation's `binding`). What may not: a new required field, a changed meaning, a changed path
-rule. Those are `registry/2`, and a reader of `registry/2` keeps reading `registry/1`.
+rule.
 
 ## 1. Names and paths
 
@@ -25,10 +26,13 @@ rule. Those are `registry/2`, and a reader of `registry/2` keeps reading `regist
   180 characters.
 - **R4** No segment is a Windows reserved name (`con`, `prn`, `aux`, `nul`, `com1`-`com9`,
   `lpt1`-`lpt9`, with or without an extension), and no segment ends in `.`.
-- **R5** An identifier is a type prefix and eight characters of lower-case Crockford base32
-  (`0-9`, `a-z` without `i`, `l`, `o`, `u`): `p_` for a project, `r_` for a record.
-- **R6** A directory name may carry a human-readable slug, but identity is carried by the identifier
-  alone. A slug is frozen when the directory is created and is never renamed.
+- **R5** An identifier is a UUID (RFC 4122), written in the usual 8-4-4-4-12 hexadecimal form in
+  lower case. It is generated once, lives inside the file it identifies, and never appears in a
+  path: 36 characters say nothing to a reader and would spend most of the R3 budget.
+- **R6** A path carries a **slug** instead: lower-case `[a-z0-9]` words joined by `-`. A slug is a
+  name, not an identity — renaming one moves the directory and changes nothing else, and two
+  registries may use the same slug for different things. A revision directory is named by its
+  time and tag, which are already unique within a record.
 - **R7** Times inside files are RFC 3339 in UTC with a `Z` suffix. Paths use R2, files use R7.
 
 ## 2. Objects and layout
@@ -43,8 +47,9 @@ rule. Those are `registry/2`, and a reader of `registry/2` keeps reading `regist
 "Latest", indexes, search and dashboards are **derived** from these and are not committed (§9).
 
 ```text
-projects/<project-id>.toml
-records/<YYYY>/<YYYY-MM-DD>-<slug>-<record-id>/
+registry.toml               what the registry is, and its index (§2.1)
+projects/<slug>.toml
+records/<YYYY>/<slug>/
     record.toml
     revisions/<YYYYMMDDTHHMMSSZ>-<tag>/
         entry.toml
@@ -58,17 +63,48 @@ records/<YYYY>/<YYYY-MM-DD>-<slug>-<record-id>/
     events/<YYYYMMDDTHHMMSSZ>-<origin>-<key>.toml
 ```
 
-- `<YYYY>` and `<YYYY-MM-DD>` are the record's creation date in UTC. A record's project is a field,
-  not a path segment: a record can be reassigned without moving it.
-- `<tag>` is four characters of the R5 alphabet, so two revisions frozen in the same second differ.
+- **Identity is a UUID inside the file; the path is a name a reader can use.** This is how Julia's
+  General registry is arranged (`D/DataFrames/`, with the UUID in `Package.toml`), for the same
+  reason: a directory listing should say what is in it.
+- `<YYYY>` is the record's creation year in UTC. A record's project is a field, not a path segment:
+  a record can be reassigned without moving it.
+- `<tag>` is four characters of lower-case Crockford base32 (`0-9`, `a-z` without `i`, `l`, `o`,
+  `u`), so two revisions frozen in the same second differ.
+- A slug is unique among its siblings, which R1 requires of any two entries of a directory anyway.
 - `_incoming/` (a deposit in progress) and `_site/` (a build) are never committed.
 
-## 3. `projects/<project-id>.toml`
+### 2.1 The index
+
+`registry.toml` says what the registry is and carries a table of every project and record by UUID —
+the shape of General's `[packages]`, one line each, sorted by UUID:
+
+```toml
+spec = "registry/2"
+name = "vault-registry"
+uuid = "6f1d8c5e-1a2b-4c3d-9e8f-0a1b2c3d4e5f"
+
+[projects]
+c0ffee00-1111-4222-8333-444444444444 = { name = "openboundary", path = "projects/openboundary.toml" }
+
+[records]
+deadbeef-5555-4666-8777-888888888888 = { name = "Does the environment remove the open boundary?", path = "records/2026/open-boundary" }
+```
+
+**The index is derived, and committed anyway.** Derived, because every line of it is already in the
+tree and a reader may rebuild it by walking `projects/` and `records/`; committed, because a reader
+that only wants to resolve a UUID should not have to walk anything, and because a registry should
+say what it holds without a tool.
+
+That it is derivable is what makes it cheap: a validator checks it against the tree and reports any
+disagreement, and a writer that meets a conflict in it — the one file every deposit touches —
+**regenerates it instead of merging by hand**.
+
+## 3. `projects/<slug>.toml`
 
 | Field | Required | Meaning |
 |---|---|---|
-| `spec` | yes | `"registry/1"` |
-| `id` | yes | the project identifier; equals the file name without `.toml` |
+| `spec` | yes | `"registry/2"` |
+| `uuid` | yes | R5; generated once, never changed |
 | `name` | yes | display name; may change |
 | `created` | yes | R7 time |
 
@@ -76,11 +112,12 @@ records/<YYYY>/<YYYY-MM-DD>-<slug>-<record-id>/
 
 | Field | Required | Meaning |
 |---|---|---|
-| `spec` | yes | `"registry/1"` |
-| `id` | yes | the record identifier; equals the directory name's suffix |
+| `spec` | yes | `"registry/2"` |
+| `uuid` | yes | R5; generated once, never changed |
 | `kind` | yes | `"report"` (a rendered result) or `"note"` (a lab note). A reader that does not know a kind shows the record as it is, and does not drop it |
-| `project` | yes | a project identifier that exists in `projects/` |
-| `created` | yes | R7 time; its UTC date equals the directory's date |
+| `project` | yes | the UUID of a project in `projects/` |
+| `title` | yes | what the record is called in the index; the current revision's title is what a reader sees |
+| `created` | yes | R7 time; its UTC year equals the directory's year |
 
 A record file is written once. Anything that changes later is an event.
 
@@ -93,8 +130,9 @@ render time; it is never reconstructed by parsing the rendered output.
 
 | Field | Required | Meaning |
 |---|---|---|
-| `spec` | yes | `"registry/1"` |
-| `id.project`, `id.record`, `id.rev`, `id.kind` | yes | must agree with `record.toml` and the directory name |
+| `spec` | yes | `"registry/2"` |
+| `id.project`, `id.record` | yes | the UUIDs in `record.toml` and the project it names |
+| `id.rev`, `id.kind` | yes | must agree with the directory name and `record.toml` |
 | `parents` | yes | revision ids of this record this revision revises; `[]` for the first |
 | `time.frozen` | yes | when the revision was frozen; equals the directory's time to the second |
 | `time.rendered` | no | when the report was rendered |
@@ -109,8 +147,8 @@ render time; it is never reconstructed by parsing the rendered output.
 | `preservation.external` | no | URLs the revision needs to display fully |
 | `migrated` | no | set when the revision was converted from an older format |
 
-Unknown fields are ignored by readers. A later `registry/1` never adds a required field; that needs
-`registry/2`, and readers keep reading `registry/1`.
+Unknown fields are ignored by readers. A later `registry/2` never adds a required field; that needs
+`registry/3`, and readers keep reading the versions before it.
 
 A field whose value is not known is **omitted**. An empty list means "known to be empty", never
 "unknown". A byte count is a positive integer. A commit is 40 hexadecimal characters. A digest is
@@ -215,9 +253,9 @@ the URLs listed in `preservation.external`. `render` (rebuilt from what the revi
   written here, with `key` four random characters of the R5 alphabet, or the name of an external
   source, with `key` derived from that source's own identifier so that importing the same thing
   twice produces the same file name.
-- Required fields: `spec`, `kind`, `at` (R7), `subject.record` (the containing record).
+- Required fields: `spec`, `kind`, `at` (R7), `subject.record` (the containing record's UUID).
   `subject.rev` and `subject.anchor` narrow the subject.
-- Kinds in `registry/1`: `comment`, `yank`, `supersede`, `capability.verified`. A reader counts and
+- Kinds in `registry/2`: `comment`, `yank`, `supersede`, `capability.verified`. A reader counts and
   shows events of a kind it does not know; it does not drop them.
 - An event is never edited. An edit elsewhere becomes a new event.
 
@@ -255,3 +293,24 @@ the catalogue, search indexes, the current revision of a record, counts.
 - **Comments from GitHub.** Import by a full, idempotent scan; the key of an imported event.
 - **Public copies.** A public revision generated afresh from a public profile, with the private
   correspondence recorded on the private side only.
+
+## 11. Migrating from `registry/1`
+
+`registry/1` trees are converted, not read alongside: a tool that had to understand both would
+carry two of everything for the sake of a version that no registry stays on. `registry.toml`'s
+`spec` says which version a tree is, and a converter rewrites it in one step. The differences are
+only those of §§1-4:
+
+| | `registry/1` | `registry/2` |
+|---|---|---|
+| identity | `p_`/`r_` and eight Crockford characters | a UUID (R5) |
+| where identity lives | in the path and in the file | in the file only |
+| project file | `projects/<id>.toml` | `projects/<slug>.toml` |
+| record directory | `records/<YYYY>/<date>-<slug>-<id>/` | `records/<YYYY>/<slug>/` |
+| index | none | `registry.toml` (§2.1) |
+
+Revisions, events, provenance and preservation are unchanged, so **converting is renaming and
+rewriting four fields**: each record directory loses its date and identifier, each project file is
+named by its slug, `id` becomes `uuid` everywhere it appears, and the index is generated. A
+revision's own files are untouched, `SHA256SUMS` included — the conversion never opens one. A tree
+is never a mixture: the `spec` of a registry is the `spec` of every file in it.

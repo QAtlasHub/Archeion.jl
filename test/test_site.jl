@@ -7,11 +7,13 @@ without_scripts(html) = replace(html, r"<script>.*?</script>"s => "")
 
 @testset "site: the banner says what registry.toml says" begin
     with_fixture() do root, rec, rev
+        reg = TOML.parsefile(joinpath(root, "registry.toml"))
         write(
             joinpath(root, "registry.toml"),
             """
-            spec = "registry/1"
+            spec = "registry/2"
             name = "fallback-name"
+            uuid = "$(reg["uuid"])"
             [site]
             title = "The Registry"
             tagline = "one question per record"
@@ -24,6 +26,7 @@ without_scripts(html) = replace(html, r"<script>.*?</script>"s => "")
             url = "https://example.org"
             """,
         )
+        Archeion.reindex!(root)                            # the head was rewritten; §2.1 stands
         Archeion.build(root)
         index = read(joinpath(root, "_site", "index.html"), String)
         page = read(joinpath(root, "_site", REC_REL, "index.html"), String)
@@ -45,7 +48,8 @@ end
 
 @testset "site: a registry that says nothing still has a name" begin
     with_fixture() do root, rec, rev
-        rm(joinpath(root, "registry.toml"); force=true)
+        write(joinpath(root, "registry.toml"), "spec = \"registry/2\"\n")
+        Archeion.reindex!(root)
         Archeion.build(root)
         index = read(joinpath(root, "_site", "index.html"), String)
         @test occursin("<header class=\"site\">", index)
@@ -64,7 +68,8 @@ end
     @test joinpath(".github", "workflows", "pages.yml") in written
 
     toml = TOML.parsefile(joinpath(root, "registry.toml"))
-    @test toml["spec"] == "registry/1" && toml["name"] == "lab-registry"
+    @test toml["spec"] == "registry/2" && toml["name"] == "lab-registry"
+    @test Archeion.is_uuid(toml["uuid"])                   # a registry names itself too
     @test toml["site"]["title"] == "Lab" && toml["site"]["tagline"] == "what we measured"
     @test occursin("_site/", read(joinpath(root, ".gitignore"), String))
 

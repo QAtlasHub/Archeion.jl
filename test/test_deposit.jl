@@ -107,14 +107,14 @@ end
         )
         @test e isa ErrorException && occursin("no binding", e.msg)
         e = attempt(
-            () -> new_binding(binding; registry=root, project="p_z7ne42dt", slug="again")
+            () -> new_binding(binding; registry=root, project=PROJECT_UUID, slug="again")
         )
         @test e isa ErrorException && occursin("created once", e.msg)
     end
 
     with_git_fixture() do root, binding, src
         nb = joinpath(root, ".registry", "bindings", "note.toml")
-        new_binding(nb; registry=root, project="p_z7ne42dt", slug="lab-notes", kind="note")
+        new_binding(nb; registry=root, project=PROJECT_UUID, slug="lab-notes", kind="note")
         res = deposit(nb; src..., doc=DOC, source_repo=root, push=false)
         record = TOML.parsefile(joinpath(dirname(dirname(res.dir)), "record.toml"))
         @test record["kind"] == "note"
@@ -131,7 +131,7 @@ end
         bad = joinpath(root, ".registry", "bindings", "diary.toml")
         e = attempt(
             () -> new_binding(
-                bad; registry=root, project="p_z7ne42dt", slug="diary", kind="diary"
+                bad; registry=root, project=PROJECT_UUID, slug="diary", kind="diary"
             ),
         )
         @test e isa ErrorException && occursin("kind must be one of", e.msg)
@@ -139,7 +139,7 @@ end
 
     with_git_fixture() do root, binding, src
         nb = joinpath(root, ".registry", "bindings", "second.toml")
-        new_binding(nb; registry=root, project="p_z7ne42dt", slug="second-question")
+        new_binding(nb; registry=root, project=PROJECT_UUID, slug="second-question")
         res = deposit(nb; src..., doc=DOC, source_repo=root, push=false)
         r, summary = Archeion.validate(root)
         @test isempty(r.errors) && length(summary) == 2 && res.parents == []

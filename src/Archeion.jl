@@ -24,6 +24,8 @@ using Random
 using SHA
 using TOML
 
+include("ids.jl")
+include("index.jl")
 include("validate.jl")
 include("build.jl")
 include("provenance.jl")
@@ -31,6 +33,7 @@ include("deposit.jl")
 include("remote.jl")
 include("pages.jl")
 include("init.jl")
+include("migrate.jl")
 
 """
     doc_fields(doc; tags = String[], question = nothing, claim = nothing) -> NamedTuple
@@ -67,11 +70,22 @@ function publish end
 
 export deposit, new_binding
 public validate,
-    build, anchors, doc_fields, provenance_from, publish, setup_pages, init, main
+    reindex!,
+    migrate!,
+    build,
+    anchors,
+    doc_fields,
+    provenance_from,
+    publish,
+    setup_pages,
+    init,
+    main
 
 function usage(io=stderr)
     println(io, "usage: julia -m Archeion init [root] [--name=N] [--title=T] [--tagline=S]")
     println(io, "       julia -m Archeion validate [root]")
+    println(io, "       julia -m Archeion reindex [root]     # the index, from the tree")
+    println(io, "       julia -m Archeion migrate [root]     # registry/1 -> registry/2")
     println(io, "       julia -m Archeion build [root] [out]")
     println(
         io, "       julia -m Archeion pages [root] [--branch=B] [--runner=R] [--site=DIR]"
@@ -117,6 +131,15 @@ function (@main)(args)
             site=get(opts, "site", nothing),
         )
         init_instructions(stdout, root, written, name)
+        return 0
+    elseif cmd == "reindex"
+        n = reindex!(root)
+        println("indexed $(n.projects) project(s) and $(n.records) record(s)")
+        return 0
+    elseif cmd == "migrate"
+        n = migrate!(root)
+        println("converted $(n.projects) project(s) and $(n.records) record(s) to $SPEC")
+        foreach(s -> println("  ", s), n.summary)
         return 0
     elseif cmd == "validate"
         r, summary = validate(root)

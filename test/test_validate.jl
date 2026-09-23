@@ -39,8 +39,11 @@
         (
             "entry.toml naming another record",
             "`id.record`",
-            (root, rec, rev) ->
-                edit!(entry(rev), "record = \"r_4aehb2y5\"", "record = \"r_00000000\""),
+            (root, rec, rev) -> edit!(
+                entry(rev),
+                "record = \"$RECORD_UUID\"",
+                "record = \"$(Archeion.new_uuid())\"",
+            ),
         ),
         (
             "a completion state in a revision",
@@ -91,8 +94,8 @@
         ),
         (
             "a record whose project does not exist",
-            "is not in projects/",
-            (root, rec, rev) -> rm(joinpath(root, "projects", "p_z7ne42dt.toml")),
+            "is not a project in projects/",
+            (root, rec, rev) -> rm(joinpath(root, "projects", "demo.toml")),
         ),
     ]
     for (name, expect, mutate!) in breaks

@@ -7,16 +7,22 @@
 using Archeion, Test, TOML, SHA, Dates
 
 const FIXTURE = joinpath(@__DIR__, "fixture")
-const REC_REL = joinpath("records", "2026", "2026-09-15-logistic-map-r_4aehb2y5")
+const FIXTURE_V1 = joinpath(@__DIR__, "fixture-v1")      # what `migrate!` is given
+const REC_REL = joinpath("records", "2026", "logistic-map")
 const REV_NAME = "20260915T071940Z-3ve4"
 const REV_REL = joinpath(REC_REL, "revisions", REV_NAME)
 
+# Identity lives in the files now (R5), so the tests read it from there rather than knowing it.
+const RECORD_UUID = TOML.parsefile(joinpath(FIXTURE, REC_REL, "record.toml"))["uuid"]
+const PROJECT_UUID = TOML.parsefile(joinpath(FIXTURE, REC_REL, "record.toml"))["project"]
+
 # A fresh copy of the fixture; returns (root, record dir, revision dir).
-function fixture_copy()
+function fixture_copy(from=FIXTURE)
     root = mktempdir()
     for d in ("projects", "records")
-        cp(joinpath(FIXTURE, d), joinpath(root, d))
+        cp(joinpath(from, d), joinpath(root, d))
     end
+    cp(joinpath(from, "registry.toml"), joinpath(root, "registry.toml"))
     return root, joinpath(root, REC_REL), joinpath(root, REV_REL)
 end
 
@@ -67,8 +73,8 @@ function event!(rec, kind, rev; anchor=nothing, extra="")
     name = "20260917T000000Z-loc-$(String(rand('a':'h', 4))).toml"
     return write(
         joinpath(rec, "events", name),
-        "spec = \"registry/1\"\nkind = \"$kind\"\nat = 2026-09-17T00:00:00Z\n$extra" *
-        "[subject]\nrecord = \"r_4aehb2y5\"\nrev = \"$rev\"\n$a",
+        "spec = \"registry/2\"\nkind = \"$kind\"\nat = 2026-09-17T00:00:00Z\n$extra" *
+        "[subject]\nrecord = \"$RECORD_UUID\"\nrev = \"$rev\"\n$a",
     )
 end
 
@@ -90,8 +96,8 @@ function with_git_fixture(f)
         mkpath(dirname(binding))
         write(
             binding,
-            "spec = \"registry/1\"\nregistry = \"../..\"\nproject = \"p_z7ne42dt\"\n" *
-            "record = \"r_4aehb2y5\"\nslug = \"logistic-map\"\n",
+            "spec = \"registry/2\"\nregistry = \"../..\"\nproject = \"$PROJECT_UUID\"\n" *
+            "record = \"$RECORD_UUID\"\nslug = \"logistic-map\"\n",
         )
         return f(
             root,
