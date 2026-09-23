@@ -15,6 +15,19 @@ rendered reports, accumulated across projects in a git repository, readable with
   was copying. `status` is required — a revision's `trial`/`final` is the author's statement, and
   Pinax's page default would otherwise make it silently `final`.
 
+## Versioning
+
+- **This is a `0.x` package: an addition is a PATCH bump; only a breaking change is a minor one.**
+  Pkg reads `0.x.y` as compatible with `>= 0.x.y, < 0.(x+1)`, so a minor bump makes every
+  downstream `compat = "0.x"` wrong and has to be chased through the repositories that pin it.
+  A new function, command, flag or section of the built site breaks nobody: bump the patch.
+  Removing or renaming one, changing what an argument means, or changing what a valid registry may
+  contain: bump the minor, and say which in the release notes.
+- Got this wrong on 2026-09-23 — 0.5.0 through 0.9.0 in a day for what was almost all additions,
+  costing a `compat` edit downstream that was never needed. The tags were renumbered the same day
+  onto the line they should have had (0.4.3 … 0.5.2, with 0.5.0 the one breaking release, the
+  `pages` flags); the releases say so, and the commits did not move.
+
 ## Contracts that trip callers
 
 - **A record is created once** (`new_binding`, committed in the repo that renders it) and every

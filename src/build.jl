@@ -24,13 +24,13 @@ stamp(t) = t isa DateTime ? Dates.format(t, "yyyy-mm-dd HH:MM") * "Z" : ""
 
 function read_registry(root)
     projects = Dict{String,Any}()
-    for f in readdir(joinpath(root, "projects"); join=true)
-        d = TOML.parsefile(f)
+    for f in entries(joinpath(root, "projects"))       # `.gitkeep` is not a project
+        d = TOML.parsefile(joinpath(root, "projects", f))
         projects[d["id"]] = d
     end
     records = []
     base = joinpath(root, "records")
-    for year in sort(readdir(base)), rec in sort(readdir(joinpath(base, year)))
+    for year in entries(base), rec in entries(joinpath(base, year))
         dir = joinpath(base, year, rec)
         record = TOML.parsefile(joinpath(dir, "record.toml"))
         revs = [
@@ -41,7 +41,7 @@ function read_registry(root)
                 provenance=let f = joinpath(dir, "revisions", n, "provenance.toml")
                     isfile(f) ? TOML.parsefile(f) : nothing
                 end,
-            ) for n in sort(readdir(joinpath(dir, "revisions")))
+            ) for n in entries(joinpath(dir, "revisions"))
         ]
         evdir = joinpath(dir, "events")
         events =
@@ -133,6 +133,23 @@ font-size:.75rem;color:var(--mut);margin-top:6px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);
 white-space:nowrap;border:0}
 .pick{color:var(--acc)}
+/* the banner, and a menu that opens with a checkbox: these pages are read from file:// as often
+   as over http, so nothing here may depend on a script running */
+header.site{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line)}
+header.site .brand{display:flex;align-items:baseline;gap:10px;flex:1;min-width:0}
+header.site .brand a{font-weight:600;font-size:1.05rem;text-decoration:none;color:var(--fg)}
+header.site .tagline{color:var(--mut);font-size:.85rem;overflow:hidden;text-overflow:ellipsis;
+white-space:nowrap}
+header.site nav{display:flex;gap:14px;font-size:.9rem}
+header.site nav a{text-decoration:none}
+.burger{display:none;cursor:pointer;padding:6px;border:1px solid var(--line);border-radius:6px}
+.burger span{display:block;width:16px;height:2px;margin:3px 0;background:var(--fg)}
+footer.site{max-width:1180px;margin:0 auto;padding:12px 16px 32px;color:var(--mut);
+font-size:.8rem;border-top:1px solid var(--line)}
+@media (max-width:640px){.burger{display:block;order:2}
+header.site nav{order:3;flex-basis:100%;display:none;flex-direction:column;gap:6px}
+#m:checked~nav{display:flex}}
 """
 
 # Everything the search needs is already in the page, so it works from a file:// window as well as
@@ -154,10 +171,63 @@ document.querySelector('.cards').scrollIntoView({behavior:'smooth'})})});
 apply()})();
 """
 
-function page(title, body)
+# What the site calls itself, from `registry.toml`'s `[site]`. A registry that says nothing still
+# gets a name — its own — so the banner is never empty; everything beyond that is optional.
+function site_config(root, fallback)
+    path = joinpath(root, "registry.toml")
+    reg = isfile(path) ? TOML.parsefile(path) : Dict{String,Any}()
+    site = get(reg, "site", Dict{String,Any}())
+    links = [
+        (;
+            text=string(get(l, "text", get(l, "url", ""))),
+            url=string(get(l, "url", "")),
+            external=occursin("://", string(get(l, "url", ""))),
+        ) for l in get(site, "links", [])
+    ]
+    return (;
+        title=string(get(site, "title", get(reg, "name", fallback))),
+        tagline=string(get(site, "tagline", "")),
+        footer=string(get(site, "footer", "")),
+        links=filter(l -> !isempty(l.url), links),
+    )
+end
+
+# The banner every page wears: the registry's name, what it says it is, and its links. The menu is
+# a checkbox and a label — no script, because these pages are read from file:// as often as over
+# http, and a menu that needs JavaScript to open is one that sometimes does not.
+function header(site, up)
+    nav = join(
+        (
+            """<a href="$(l.external ? html_escape(l.url) : up * "/" * html_escape(l.url))"$(l.external ? " rel=\"noopener\"" : "")>$(html_escape(l.text))</a>"""
+            for l in site.links
+        ),
+        "",
+    )
+    menu = if isempty(site.links)
+        ""
+    else
+        """<input type="checkbox" id="m" class="sr-only"><label for="m" class="burger" \
+aria-label="Menu" title="Menu"><span></span><span></span><span></span></label><nav>$nav</nav>"""
+    end
+    tagline = if isempty(site.tagline)
+        ""
+    else
+        """<span class="tagline">$(html_escape(site.tagline))</span>"""
+    end
+    return """<header class="site"><div class="brand">\
+<a href="$up/index.html">$(html_escape(site.title))</a>$tagline</div>$menu</header>"""
+end
+
+function footer(site)
+    isempty(site.footer) && return ""
+    return """<footer class="site">$(html_escape(site.footer))</footer>"""
+end
+
+function page(title, body; site, up=".")
     return """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>$(html_escape(title))</title>
-<style>$CSS</style></head><body><main>$body</main></body></html>
+<style>$CSS</style></head><body>$(header(site, up))
+<main>$body</main>$(footer(site))</body></html>
 """
 end
 
@@ -377,7 +447,7 @@ function activity(records; today=Dates.today())
     <span class="legend">Less$legend More</span></div></div>"""
 end
 
-function index_page(name, projects, records)
+function index_page(site, projects, records)
     counts = Dict("current" => 0, "withdrawn" => 0, "conflict" => 0)
     publish_only = 0
     comments = 0
@@ -424,7 +494,7 @@ $(isempty(rtags) ? "" : "<div class=\"meta\">$(html_escape(join(rtags, ", ")))</
         )
     end
     pnames = Set(get(p, "name", id) for (id, p) in projects)
-    body = """<h1>$(html_escape(name))</h1><div class="mut">Built from the registry tree; nothing here is edited by hand.</div>
+    body = """<h1>$(html_escape(site.title))</h1><div class="mut">Built from the registry tree; nothing here is edited by hand.</div>
     <div class="state"><span><b>$(length(records))</b> records</span><span><b>$nrev</b> revisions</span>
     <span class="$(counts["withdrawn"] > 0 ? "bad" : "")"><b>$(counts["withdrawn"])</b> withdrawn</span>
     <span class="$(counts["conflict"] > 0 ? "warn" : "")"><b>$(counts["conflict"])</b> in conflict</span>
@@ -440,7 +510,7 @@ $(isempty(rtags) ? "" : "<div class=\"meta\">$(html_escape(join(rtags, ", ")))</
     <div class="mut"><span id="shown">$(length(records))</span> shown</div>
     <div class="cards">$(String(take!(cards)))</div><script>$FILTER_JS</script>
     """
-    return page(name, body)
+    return page(site.title, body; site=site)
 end
 
 # One line for a revision's per-point provenance (§5.5): how many points, how many of them read
@@ -474,7 +544,7 @@ function kind_note(record)
     end
 end
 
-function record_page(name, projects, rec)
+function record_page(site, projects, rec)
     rev = shown(rec)
     yanked = subjects(rec.events, "yank")
     superseded = subjects(rec.events, "supersede")
@@ -526,7 +596,7 @@ function record_page(name, projects, rec)
  """,
         )
     end
-    body = """<div class="mut"><a href="$up/index.html">$(html_escape(name))</a> / $(html_escape(proj))</div>
+    body = """<div class="mut"><a href="$up/index.html">$(html_escape(site.title))</a> / $(html_escape(proj))</div>
     <h1>$(html_escape(rev.entry["doc"]["title"]))</h1><div class="mut">record <code>$(html_escape(rec.record["id"]))</code>
     · created $(day(rec.record["created"]))$(kind_note(rec.record))</div><div class="state">$stline</div>
     <p><a href="revisions/$(html_escape(rev.name))/gallery/index.html">Open the report →</a></p>
@@ -534,7 +604,7 @@ function record_page(name, projects, rec)
     $(String(take!(rows)))</table></div>
     <h2>Events</h2>$(isempty(rec.events) ? "<div class=\"mut\">none</div>" : String(take!(evs)))
     """
-    return page(rev.entry["doc"]["title"], body)
+    return page(rev.entry["doc"]["title"], body; site=site, up=up)
 end
 
 # ── checking the output ───────────────────────────────────────────────────────────────────────
@@ -583,6 +653,7 @@ function copy_revision(src, dest)
 end
 
 function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
+    site = site_config(root, name)
     r, _ = validate(root)
     isempty(r.errors) || error(
         "the registry does not validate; run tools/validate.jl:\n  " *
@@ -602,9 +673,9 @@ function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
         for rev in rec.revs
             copy_revision(rev.dir, joinpath(dest, "revisions", rev.name))
         end
-        write(joinpath(dest, "index.html"), record_page(name, projects, rec))
+        write(joinpath(dest, "index.html"), record_page(site, projects, rec))
     end
-    write(joinpath(out, "index.html"), index_page(name, projects, records))
+    write(joinpath(out, "index.html"), index_page(site, projects, records))
     bad = broken_links(out)
     isempty(bad) || error("the site has broken links:\n  " * join(bad, "\n  "))
     bytes = sum(filesize(joinpath(d, f)) for (d, _, fs) in walkdir(out) for f in fs)

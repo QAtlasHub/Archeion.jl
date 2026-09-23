@@ -118,11 +118,16 @@ end
 
 # ── §3 projects ───────────────────────────────────────────────────────────────────────────────
 
+# What a directory holds, minus the entries a tool left there: `.gitkeep` holding an empty
+# directory open, `.DS_Store`, an editor's swap file. A dot-entry is not part of the format, and a
+# reader that errored on one would make a registry invalid by looking at it wrong.
+entries(dir) = sort(filter(n -> !startswith(n, "."), readdir(dir)))
+
 function check_projects(r::Report)
     ids = Set{String}()
     base = joinpath(r.root, "projects")
     isdir(base) || return ids
-    for f in sort(readdir(base))
+    for f in entries(base)
         path = joinpath(base, f)
         endswith(f, ".toml") || (err!(r, path, "not a project file"); continue)
         d = load(r, path)
@@ -397,11 +402,11 @@ function validate(root)
     seen = Dict{String,String}()
     summary = String[]
     base = joinpath(r.root, "records")
-    for year in (isdir(base) ? sort(readdir(base)) : String[])
+    for year in (isdir(base) ? entries(base) : String[])
         ydir = joinpath(base, year)
         isdir(ydir) && occursin(r"^\d{4}$", year) ||
             (err!(r, ydir, "not a year directory"); continue)
-        for rec in sort(readdir(ydir))
+        for rec in entries(ydir)
             s = check_record(r, joinpath(ydir, rec), year, projects, seen)
             s === nothing || push!(summary, s)
         end
