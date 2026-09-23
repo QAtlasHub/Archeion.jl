@@ -1,5 +1,20 @@
 # deposit: revisions go in through a binding, and a revision that does not validate never lands.
 
+@testset "deposit: a cleanup that fails keeps the failure it was cleaning up after" begin
+    parent = mktempdir()
+    dir = joinpath(parent, "rev")
+    mkpath(dir)
+    write(joinpath(dir, "entry.toml"), "x")
+    chmod(parent, 0o500)                                  # the entry cannot be unlinked
+    try
+        @test_logs (:warn, r"could not remove") Archeion.discard!(dir)
+        @test isdir(dir)                                  # and the caller still rethrows its own
+    finally
+        chmod(parent, 0o700)
+        rm(parent; recursive=true, force=true)
+    end
+end
+
 @testset "deposit: the file a render returns stands for its directory" begin
     with_git_fixture() do root, binding, src
         res = deposit(

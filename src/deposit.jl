@@ -149,6 +149,17 @@ end
 # (`index.html`, `agent.json`), so a file stands for its directory.
 face_dir(path) = isfile(path) ? dirname(path) : path
 
+# Remove a revision being built. A failure here must not replace the failure that got us here:
+# the caller is about to rethrow what actually went wrong.
+function discard!(dir)
+    try
+        rm(dir; recursive=true, force=true)
+    catch e
+        @warn "could not remove $dir" exception = e
+    end
+    return nothing
+end
+
 function copy_tree(src, dest)
     isdir(src) || error("$src is not a directory")
     for (dir, _, files) in walkdir(src), f in files
@@ -288,11 +299,7 @@ function deposit(
         provenance === nothing || write_provenance!(incoming; provenance...)
         write_sums(incoming)                              # last: its presence means "complete"
     catch e
-        try
-            rm(incoming; recursive=true, force=true)      # nothing half-written is left behind
-        catch cleanup
-            @warn "could not remove $incoming" exception = cleanup
-        end
+        discard!(incoming)                                # nothing half-written is left behind
         rethrow(e)
     end
 
