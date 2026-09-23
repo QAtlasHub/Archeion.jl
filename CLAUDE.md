@@ -23,8 +23,10 @@ rendered reports, accumulated across projects in a git repository, readable with
   A new function, command, flag or section of the built site breaks nobody: bump the patch.
   Removing or renaming one, changing what an argument means, or changing what a valid registry may
   contain: bump the minor, and say which in the release notes.
-- Got this wrong on 2026-09-23 — 0.5.0 through 0.10.0 in a day for what was almost all additions,
-  costing a `compat` edit downstream that was never needed. Only the `pages` flags were breaking.
+- Got this wrong on 2026-09-23 — 0.5.0 through 0.9.0 in a day for what was almost all additions,
+  costing a `compat` edit downstream that was never needed. The tags were renumbered the same day
+  onto the line they should have had (0.4.3 … 0.5.2, with 0.5.0 the one breaking release, the
+  `pages` flags); the releases say so, and the commits did not move.
 
 ## Contracts that trip callers
 
