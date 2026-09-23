@@ -72,10 +72,51 @@ end
 
 @testset "pages: the CLI writes them where it is pointed" begin
     root = mktempdir()
-    code = redirect_stdout(() -> Archeion.main(["pages", root, "trunk"]), devnull)
+    code = redirect_stdout(() -> Archeion.main(["pages", root, "--branch=trunk"]), devnull)
     @test code == 0
     yml = read(joinpath(root, ".github", "workflows", "pages.yml"), String)
     @test occursin("branches: [trunk]", yml)
     @test isfile(joinpath(root, ".github", "workflows", "validate.yml"))
+    rm(root; recursive=true)
+end
+
+@testset "pages --site: the route for a registry that must not be published" begin
+    root = mktempdir()
+    written = Archeion.setup_pages(
+        root; version="9.9.9", runner="[self-hosted, rosina]", site="/home/x/site/reg"
+    )
+    @test written == [
+        joinpath(".github", "workflows", "site.yml"),
+        joinpath(".github", "workflows", "validate.yml"),
+    ]
+    dir = joinpath(root, ".github", "workflows")
+    @test !isfile(joinpath(dir, "pages.yml"))          # nothing is published
+    yml = read(joinpath(dir, "site.yml"), String)
+    @test occursin("runs-on: [self-hosted, rosina]", yml)
+    @test occursin("rev=\"v9.9.9\"", yml)
+    # built beside, then renamed into place: a reader never meets a half-written site
+    @test occursin("/home/x/site/reg.new", yml) &&
+        occursin("mv \"/home/x/site/reg.new\" \"/home/x/site/reg\"", yml)
+    @test occursin("-m Archeion validate .", yml)      # and never publishes an invalid tree
+    @test occursin(
+        "runs-on: [self-hosted, rosina]", read(joinpath(dir, "validate.yml"), String)
+    )
+
+    said = sprint() do io
+        Archeion.pages_instructions(io, root, written, "9.9.9"; site="/home/x/site/reg")
+    end
+    @test occursin("ssh-browser", said) && occursin("/home/x/site/reg/index.html", said)
+    @test !occursin("Settings -> Pages", said)
+    rm(root; recursive=true)
+end
+
+@testset "pages: the CLI takes its flags in any order" begin
+    root = mktempdir()
+    code = redirect_stdout(devnull) do
+        Archeion.main(["pages", "--site=/tmp/s", root, "--branch=main"])
+    end
+    @test code == 0
+    yml = read(joinpath(root, ".github", "workflows", "site.yml"), String)
+    @test occursin("branches: [main]", yml) && occursin("/tmp/s", yml)
     rm(root; recursive=true)
 end
