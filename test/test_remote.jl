@@ -189,3 +189,68 @@ end
     e = attempt(() -> Archeion.publish_revision!(".", "r", "t"; remote=:elsewhere))
     @test e isa ErrorException && occursin("must be :pr, :push or :local", e.msg)
 end
+
+# A binding with the record identifier chosen rather than generated, so that two deposits land on
+# the same line of the index and the conflict is the one being tested, not the one that came up.
+function binding_for!(repo, slug, uuid)
+    path = joinpath(repo, ".registry", "bindings", "$slug.toml")
+    mkpath(dirname(path))
+    write(
+        path,
+        "spec = \"registry/2\"\nregistry = \"../..\"\nproject = \"$PROJECT_UUID\"\n" *
+        "record = \"$uuid\"\nslug = \"$slug\"\nkind = \"note\"\n",
+    )
+    return path
+end
+
+@testset "remote: two deposits made at once settle the index by regenerating it" begin
+    with_shared_registry() do root, binding, src, remote, clone
+        # Both clones hold the same registry and each deposits a record of its own, before either
+        # pushes. Both identifiers sort after the record already indexed, so both new lines go to
+        # the same place in the one file every deposit writes (§2.1).
+        made = [
+            "ffff0000-0000-4000-8000-000000000001", "ffff1111-1111-4111-8111-111111111112"
+        ]
+        for (repo, slug, uuid) in
+            ((root, "first-question", made[1]), (clone, "second-question", made[2]))
+            deposit(
+                binding_for!(repo, slug, uuid);
+                gallery=joinpath(repo, REV_REL, "gallery"),
+                agent=joinpath(repo, REV_REL, "agent"),
+                doc=DOC,
+                source_repo=repo,
+                push=false,
+            )
+        end
+        run(`git -C $root push -q`)                        # the first one in wins the race
+        # the index really is where they collide: git cannot merge it on its own
+        @test !success(`git -C $clone pull -q --rebase`)
+        conflicted = readchomp(`git -C $clone diff --name-only --diff-filter=U`)
+        @test conflicted == "registry.toml"
+        run(`git -C $clone rebase --abort`)
+
+        res = Archeion.publish_revision!(clone, "rev", "t"; remote=:push)
+        @test res.pushed
+        # the second clone's push went through, and the index it pushed names both records
+        index = read(joinpath(clone, "registry.toml"), String)
+        @test all(id -> occursin(id, index), made)
+        @test isempty(first(Archeion.validate(clone)).errors)
+        @test isempty(readchomp(`git -C $clone status --porcelain --untracked-files=no`))
+        @test isempty(Archeion.index_disagreements(clone))
+    end
+end
+
+@testset "remote: a conflict that is not the index is left to a person" begin
+    with_shared_registry() do root, binding, src, remote, clone
+        for (repo, line) in ((root, "mine\n"), (clone, "theirs\n"))
+            write(joinpath(repo, "NOTES.md"), line)
+            run(`git -C $repo add NOTES.md`)
+            run(`git -C $repo commit -qm notes`)
+        end
+        run(`git -C $root push -q`)
+        e = attempt(() -> Archeion.publish_revision!(clone, "rev", "t"; remote=:push))
+        @test e isa ErrorException && occursin("NOTES.md", e.msg)
+        @test isempty(readchomp(`git -C $clone status --porcelain --untracked-files=no`))
+        @test !isdir(joinpath(clone, ".git", "rebase-merge"))   # the rebase was put back
+    end
+end

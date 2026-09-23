@@ -9,10 +9,8 @@
 #
 # The binding is a small TOML file committed in the repository whose code renders the report.
 
-const ALPHABET = collect("0123456789abcdefghjkmnpqrstvwxyz")    # R5
 const SKIP = Set([".pinax-manifest.toml"])                        # render-cache bookkeeping
 
-token(n) = String(rand(Random.RandomDevice(), ALPHABET, n))
 utcnow() = floor(now(Dates.UTC), Second)
 
 function git(dir, args...; ok=false)
@@ -39,13 +37,12 @@ record, because a record answers one question in one way (§4).
 function new_binding(path; registry, project, slug, kind="report")
     ispath(path) &&
         error("$path exists; a binding is created once. Use another path for a new record.")
-    occursin(r"^[a-z0-9]+(-[a-z0-9]+)*$", slug) ||
-        error("slug must be lower-case words joined by `-`")
-    occursin(PROJECT_ID, project) || error("$project is not a project identifier")
+    is_slug(slug) || error("slug must be lower-case words joined by `-` (R6)")
+    is_uuid(project) || error("$project is not a UUID (R5)")
     kind in RECORD_KINDS || error("kind must be one of $(sort(collect(RECORD_KINDS)))")
-    isfile(joinpath(registry, "projects", "$project.toml")) ||
+    haskey(first(scan(registry)), project) ||
         error("project $project is not in $(joinpath(registry, "projects"))")
-    id = "r_" * token(8)
+    id = new_uuid()
     mkpath(dirname(abspath(path)))
     open(path, "w") do io
         return TOML.print(
@@ -71,13 +68,17 @@ function registry_of(binding)
     )
 end
 
-function find_record(reg, id)
-    base = joinpath(reg, "records")
-    hits = [
-        joinpath(base, y, d) for y in readdir(base) for
-        d in readdir(joinpath(base, y)) if endswith(d, "-" * id)
-    ]
-    return isempty(hits) ? nothing : only(hits)
+# A record is found by its UUID, which lives in the files rather than the path (R5). The index
+# answers first; the tree is asked when the index has not caught up with it yet.
+function find_record(reg, uuid)
+    listed = get(get(read_registry_toml(reg), "records", Dict{String,Any}()), uuid, nothing)
+    if listed !== nothing
+        dir = joinpath(reg, listed["path"])
+        isdir(dir) && return dir
+    end
+    found = last(scan(reg))
+    haskey(found, uuid) || return nothing
+    return joinpath(reg, found[uuid]["path"])
 end
 
 # ── what the revision says ────────────────────────────────────────────────────────────────────
@@ -230,6 +231,17 @@ function deposit(
     isfile(binding) ||
         error("no binding at $binding; create one with new_binding (once per record)")
     b = TOML.parsefile(binding)
+    # `new_binding` checked these when it wrote the file, but the file is committed in another
+    # repository and edited by hand; what names a directory here is checked where it is used.
+    is_uuid(get(b, "record", nothing)) ||
+        error("$binding: `record` $(repr(get(b, "record", nothing))) is not a UUID (R5)")
+    is_uuid(get(b, "project", nothing)) ||
+        error("$binding: `project` $(repr(get(b, "project", nothing))) is not a UUID (R5)")
+    is_slug(get(b, "slug", nothing)) ||
+        error("$binding: `slug` $(repr(get(b, "slug", nothing))) is not a slug (R6)")
+    get(b, "kind", "report") in RECORD_KINDS || error(
+        "$binding: `kind` $(repr(b["kind"])) is not one of $(join(RECORD_KINDS, ", "))"
+    )
     reg = registry_of(binding)
     id = b["record"]
     r0, _ = validate(reg)
@@ -247,18 +259,21 @@ function deposit(
     else
         get(TOML.parsefile(joinpath(recdir, "record.toml")), "kind", "report")
     end
+    # The binding's `slug` names a record only when there is not one yet. Afterwards the record's
+    # own directory is the name, and it may be renamed without touching the binding (R6): the two
+    # disagreeing is not a conflict to resolve, because only the UUID resolves anything.
     if new_record
-        recdir = joinpath(
-            reg,
-            "records",
-            Dates.format(frozen, "yyyy"),
-            Dates.format(frozen, "yyyy-mm-dd") * "-" * b["slug"] * "-" * id,
+        recdir = joinpath(reg, "records", Dates.format(frozen, "yyyy"), b["slug"])
+        ispath(recdir) && error(
+            "$recdir exists: another record of this year is already called $(b["slug"]); " *
+            "give this one another slug",
         )
         record = Dict{String,Any}(
             "spec" => SPEC,
-            "id" => id,
+            "uuid" => id,
             "kind" => kind,
             "project" => b["project"],
+            "title" => doc.title,
             "created" => frozen,
         )
     else
@@ -284,7 +299,7 @@ function deposit(
         parents = heads
     end
 
-    rev = Dates.format(frozen, PATH_TIME) * "-" * token(4)
+    rev = Dates.format(frozen, PATH_TIME) * "-" * tag()
     entry = Dict{String,Any}(
         "spec" => SPEC,
         "parents" => collect(parents),
@@ -329,10 +344,12 @@ function deposit(
         io -> TOML.print(io, record; sorted=true), joinpath(recdir, "record.toml"), "w"
     )
     mv(incoming, final)
+    reindex!(reg)                                     # the index follows the tree (§2.1)
     r, _ = validate(reg)
     if !isempty(r.errors)
         rm(final; recursive=true)
         new_record && rm(recdir; recursive=true)
+        reindex!(reg)
         error(
             "the new revision does not validate, so it was taken back out:\n  " *
             join(r.errors, "\n  "),
@@ -340,12 +357,12 @@ function deposit(
     end
 
     path = relpath(new_record ? recdir : final, reg)
-    git(reg, "add", "--", path)
-    git(reg, "commit", "-q", "-m", "deposit $id $rev: $(doc.title)", "--", path)
+    git(reg, "add", "--", path, INDEX_FILE)
+    git(reg, "commit", "-q", "-m", "deposit $id $rev: $(doc.title)", "--", path, INDEX_FILE)
     pushed = false
     if push
         if git(reg, "push", "-q"; ok=true) === nothing
-            git(reg, "pull", "-q", "--rebase")            # someone else deposited meanwhile
+            rebase_onto_remote!(reg)                      # someone else deposited meanwhile
             git(reg, "push", "-q")
         end
         pushed = true

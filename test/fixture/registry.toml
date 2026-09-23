@@ -1,0 +1,9 @@
+name = "fixture"
+spec = "registry/2"
+uuid = "684de889-0b57-4371-b7f7-80eb3e2ed2e6"
+
+[projects]
+005bfa5b-902e-4746-9855-996d4b2f174c = { name = "demo", path = "projects/demo.toml" }
+
+[records]
+fbb1435c-077a-459d-87b3-8b7f1a58c896 = { name = "The logistic map, as a model record", path = "records/2026/logistic-map" }

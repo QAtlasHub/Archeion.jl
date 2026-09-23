@@ -49,8 +49,7 @@ end
     # the search index: not only the title, but what the record asks, is tagged, and is called,
     # and what was said about it afterwards
     text = match(r"data-text=\"([^\"]*)\"", b.index)[1]
-    for word in
-        ("logistic", "r_4aehb2y5", "does the boundary matter", "example", "artefact")
+    for word in ("logistic", RECORD_UUID, "does the boundary matter", "example", "artefact")
         @test occursin(word, text)
     end
     @test occursin("data-month=\"2026-09\"", b.index)

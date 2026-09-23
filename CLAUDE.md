@@ -5,7 +5,7 @@ rendered reports, accumulated across projects in a git repository, readable with
 
 ## Role / public API
 
-- The **format** is `SPEC.md` (`spec = "registry/1"`). The package implements it; it is not the
+- The **format** is `SPEC.md` (`spec = "registry/2"`). The package implements it; it is not the
   format. A change to what a registry may contain is a change to `SPEC.md` first.
 - `Archeion.validate(root) -> (report, summary)` · `Archeion.build(root[, out])` ·
   `new_binding(path; registry, project, slug, kind)` · `deposit(binding; gallery, agent, doc, source_repo)`
@@ -51,7 +51,7 @@ rendered reports, accumulated across projects in a git repository, readable with
 
 - **The core depends on the standard library only.** Anything that needs another package (Pinax,
   DataVault) is an extension. The reader must run wherever Julia does.
-- **Readers keep reading every `registry/N` ever written.** `registry/1` never gains a required
-  field; that is `registry/2`.
+- **Readers keep reading every `registry/N` ever written.** `registry/2` never gains a required
+  field; that is `registry/3`.
 - **Every new check comes with a test that breaks the fixture and requires the check to name it.**
   A check that passes a good registry proves nothing on its own.

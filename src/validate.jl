@@ -1,11 +1,11 @@
-# validate.jl — check a registry against SPEC.md (spec = "registry/1").
+# validate.jl — check a registry against SPEC.md (spec = "registry/2").
 #
 # Errors fail a registry; warnings are reported and do not. Section numbers refer to SPEC.md.
 
-const SPEC = "registry/1"
-const B32 = "[0-9a-hjkmnp-tv-z]"                       # Crockford base32, lower case (R5)
-const PROJECT_ID = Regex("^p_$(B32){8}\$")
-const RECORD_DIR = Regex("^(\\d{4}-\\d{2}-\\d{2})-([a-z0-9-]+)-(r_$(B32){8})\$")
+const SPEC = "registry/2"
+const SPEC_1 = "registry/1"                            # converted, never read alongside (§11)
+const B32 = "[0-9a-hjkmnp-tv-z]"                       # Crockford base32, lower case
+const RECORD_DIR = SLUG_RE                             # a record directory is its slug (R6)
 const REV_DIR = Regex("^(\\d{8}T\\d{6}Z)-($(B32){4})\$")
 const EVENT_FILE = r"^(\d{8}T\d{6}Z)-([a-z0-9]+)-([a-z0-9_.-]+)\.toml$"
 const SEGMENT = r"^[A-Za-z0-9_.-]+$"                     # R1
@@ -76,8 +76,23 @@ function require(r, path, d, keys...; type=Any)
     return v
 end
 
-function check_spec(r, path, d)
-    return get(d, "spec", nothing) == SPEC || err!(r, path, "`spec` must be \"$SPEC\"")
+function check_spec(r, path, d; frozen_before=false)
+    v = get(d, "spec", nothing)
+    v == SPEC && return true
+    # A revision frozen under registry/1 says so, and cannot be rewritten to say otherwise: its
+    # own SHA256SUMS covers the file (§5.2, §11).
+    frozen_before && v == SPEC_1 && return true
+    return err!(r, path, "`spec` must be \"$SPEC\"")
+end
+
+# The licence a conversion leaves behind (§11). A record keeps its `migrated` table for good, but
+# what the table excuses is not the record — it is what was already frozen when the conversion ran.
+# `at` is when that was, so a revision or event dated after it is held to registry/2 like any other.
+function migrated_before(was, stamp)
+    at = get(was, "at", nothing)
+    at isa DateTime || return false
+    t = tryparse(DateTime, stamp, PATH_TIME)
+    return t !== nothing && t < at
 end
 
 # ── §1 names and paths ────────────────────────────────────────────────────────────────────────
@@ -130,15 +145,19 @@ function check_projects(r::Report)
     for f in entries(base)
         path = joinpath(base, f)
         endswith(f, ".toml") || (err!(r, path, "not a project file"); continue)
+        is_slug(splitext(f)[1]) || err!(
+            r,
+            path,
+            "a project file is named by its slug (R6), not $(repr(splitext(f)[1]))",
+        )
         d = load(r, path)
         d === nothing && continue
         check_spec(r, path, d)
-        id = require(r, path, d, "id"; type=String)
-        if id !== nothing
-            occursin(PROJECT_ID, id) ||
-                err!(r, path, "`id` is not a project identifier (R5)")
-            id == f[1:(end - 5)] || err!(r, path, "`id` $id does not match the file name")
-            push!(ids, id)
+        uuid = require(r, path, d, "uuid"; type=String)
+        if uuid !== nothing
+            is_uuid(uuid) || err!(r, path, "`uuid` is not a UUID (R5)")
+            uuid in ids && err!(r, path, "`uuid` $uuid names more than one project")
+            push!(ids, uuid)
         end
         require(r, path, d, "name"; type=String)
         require(r, path, d, "created"; type=DateTime)
@@ -217,15 +236,32 @@ function check_revision(r::Report, revdir, record, revs)
     check_sums(r, revdir)
     isfile(joinpath(revdir, "README.md")) || err!(r, revdir, "no README.md (§5.2)")
     e === nothing && return nothing
-    check_spec(r, path, e)
-    for (k, want) in (
-        ("project", get(record, "project", nothing)),
-        ("record", get(record, "id", nothing)),
-        ("rev", name),
-        ("kind", get(record, "kind", nothing)),
+    # A revision frozen under registry/1 still names the identifiers of that day, and it may not
+    # be rewritten: `SHA256SUMS` covers `entry.toml` (§5.2), and a digest a reader has cited does
+    # not change because the registry was converted. `record.migrated` is what makes it readable
+    # — and `migrated.at` is what keeps that to the revisions that were already there.
+    was = get(record, "migrated", Dict{String,Any}())
+    legacy = migrated_before(was, String(m[1]))
+    check_spec(r, path, e; frozen_before=legacy)
+    for (k, want, before) in (
+        (
+            "project",
+            get(record, "project", nothing),
+            legacy ? get(was, "project", nothing) : nothing,
+        ),
+        (
+            "record",
+            get(record, "uuid", nothing),
+            legacy ? get(was, "id", nothing) : nothing,
+        ),
+        ("rev", name, nothing),
+        ("kind", get(record, "kind", nothing), nothing),
     )
         v = require(r, path, e, "id", k; type=String)
-        v === nothing || v == want || err!(r, path, "`id.$k` is $v, expected $want")
+        v === nothing ||
+            v == want ||
+            v == before ||
+            err!(r, path, "`id.$k` is $v, expected $want")
     end
     parents = require(r, path, e, "parents"; type=AbstractVector)
     for p in something(parents, [])
@@ -283,27 +319,30 @@ end
 
 # ── §7 events and the current revision ──────────────────────────────────────────────────────
 
-function check_events(r::Report, recdir, recid, revinfo)
+function check_events(r::Report, recdir, recid, revinfo; was=Dict{String,Any}())
     evdir = joinpath(recdir, "events")
     events = Dict{String,Any}[]
     isdir(evdir) || return events
     for f in sort(readdir(evdir))
         path = joinpath(evdir, f)
-        occursin(EVENT_FILE, f) || (
+        m = match(EVENT_FILE, f)
+        m === nothing && (
             err!(r, path, "event file is not `<YYYYMMDDTHHMMSSZ>-<origin>-<key>.toml`");
             continue
         )
         ev = load(r, path)
         ev === nothing && continue
-        check_spec(r, path, ev)
+        legacy = migrated_before(was, String(m[1]))
+        check_spec(r, path, ev; frozen_before=legacy)
         kind = require(r, path, ev, "kind"; type=String)
         kind === nothing ||
             kind in EVENT_KINDS ||
-            warn!(r, path, "event kind `$kind` is not known to registry/1")
+            warn!(r, path, "event kind `$kind` is not known to $SPEC")
         require(r, path, ev, "at"; type=DateTime)
         subj = require(r, path, ev, "subject", "record"; type=String)
         subj === nothing ||
             subj == recid ||
+            (legacy && subj == get(was, "id", nothing)) ||   # written before the conversion (§11)
             err!(r, path, "`subject.record` $subj is not this record")
         rev = getpath(ev, "subject", "rev")
         anchor = getpath(ev, "subject", "anchor")
@@ -339,36 +378,31 @@ end
 
 function check_record(r::Report, recdir, year, projects, seen)
     rec = basename(recdir)
-    m = match(RECORD_DIR, rec)
-    m === nothing && (
-        err!(r, recdir, "record directory is not `<YYYY-MM-DD>-<slug>-<record-id>`");
-        return nothing
-    )
-    startswith(m[1], year) ||
-        err!(r, recdir, "created in $(m[1][1:4]) but filed under $year")
-    id = String(m[3])
-    haskey(seen, id) && err!(r, recdir, "record id $id is also used by $(seen[id])")
-    seen[id] = rel(r, recdir)
+    occursin(RECORD_DIR, rec) ||
+        (err!(r, recdir, "a record directory is named by its slug (R6)"); return nothing)
     path = joinpath(recdir, "record.toml")
     d = load(r, path)
     d === nothing && return nothing
     check_spec(r, path, d)
-    rid = require(r, path, d, "id"; type=String)
-    rid === nothing ||
-        rid == id ||
-        err!(r, path, "`id` $rid does not match the directory's $id")
+    id = require(r, path, d, "uuid"; type=String)
+    if id !== nothing
+        is_uuid(id) || err!(r, path, "`uuid` is not a UUID (R5)")
+        haskey(seen, id) && err!(r, recdir, "record uuid $id is also used by $(seen[id])")
+        seen[id] = rel(r, recdir)
+    end
+    require(r, path, d, "title"; type=String)
     kind = require(r, path, d, "kind"; type=String)
     kind === nothing ||
         kind in RECORD_KINDS ||
-        warn!(r, path, "record kind `$kind` is not known to registry/1")
+        warn!(r, path, "record kind `$kind` is not known to $SPEC")
     proj = require(r, path, d, "project"; type=String)
     proj === nothing ||
         proj in projects ||
-        err!(r, path, "project $proj is not in projects/")
+        err!(r, path, "project $proj is not a project in projects/")
     created = require(r, path, d, "created"; type=DateTime)
     created === nothing ||
-        Dates.format(created, "yyyy-mm-dd") == m[1] ||
-        err!(r, path, "created on $(Date(created)) but the directory says $(m[1])")
+        Dates.format(created, "yyyy") == year ||
+        err!(r, path, "created in $(Dates.year(created)) but filed under $year")
     revroot = joinpath(recdir, "revisions")
     names = if isdir(revroot)
         sort(filter(n -> isdir(joinpath(revroot, n)), readdir(revroot)))
@@ -381,7 +415,9 @@ function check_record(r::Report, recdir, year, projects, seen)
         info = check_revision(r, joinpath(revroot, n), d, Set(names))
         info === nothing || (revinfo[n] = info)
     end
-    events = check_events(r, recdir, id, revinfo)
+    events = check_events(
+        r, recdir, id, revinfo; was=get(d, "migrated", Dict{String,Any}())
+    )
     heads = current(revinfo, events)
     length(heads) > 1 &&
         warn!(r, recdir, "several current revisions; nothing is chosen by time (§7.1)")
@@ -397,6 +433,28 @@ end
 
 function validate(root)
     r = Report(abspath(root))
+    spec = spec_of(r.root)
+    if spec == SPEC_1
+        err!(
+            r,
+            registry_file(r.root),
+            "this is a $SPEC_1 registry; convert it with `Archeion.migrate!` (SPEC §11)",
+        )
+    elseif spec === nothing
+        # Not a nicety: `reindex!` writes the index into this file, so a registry without one is a
+        # registry whose name, uuid and banner the next deposit would have nothing to preserve.
+        err!(
+            r,
+            registry_file(r.root),
+            if isfile(registry_file(r.root))
+                "no `spec`: a registry says what format it is (§2.1)"
+            else
+                "no $INDEX_FILE: a registry says what it is and what it holds (§2.1)"
+            end,
+        )
+    elseif spec != SPEC
+        err!(r, registry_file(r.root), "`spec` is $(repr(spec))")
+    end
     check_paths(r)
     projects = check_projects(r)
     seen = Dict{String,String}()
@@ -410,6 +468,11 @@ function validate(root)
             s = check_record(r, joinpath(ydir, rec), year, projects, seen)
             s === nothing || push!(summary, s)
         end
+    end
+    # The index is derived, so a disagreement is a fact about this tree, not a judgement call:
+    # `reindex!` settles it (§2.1).
+    for d in index_disagreements(r.root)
+        err!(r, registry_file(r.root), d * " — run `Archeion.reindex!`")
     end
     return r, summary
 end

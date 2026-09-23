@@ -107,14 +107,14 @@ end
         )
         @test e isa ErrorException && occursin("no binding", e.msg)
         e = attempt(
-            () -> new_binding(binding; registry=root, project="p_z7ne42dt", slug="again")
+            () -> new_binding(binding; registry=root, project=PROJECT_UUID, slug="again")
         )
         @test e isa ErrorException && occursin("created once", e.msg)
     end
 
     with_git_fixture() do root, binding, src
         nb = joinpath(root, ".registry", "bindings", "note.toml")
-        new_binding(nb; registry=root, project="p_z7ne42dt", slug="lab-notes", kind="note")
+        new_binding(nb; registry=root, project=PROJECT_UUID, slug="lab-notes", kind="note")
         res = deposit(nb; src..., doc=DOC, source_repo=root, push=false)
         record = TOML.parsefile(joinpath(dirname(dirname(res.dir)), "record.toml"))
         @test record["kind"] == "note"
@@ -131,7 +131,7 @@ end
         bad = joinpath(root, ".registry", "bindings", "diary.toml")
         e = attempt(
             () -> new_binding(
-                bad; registry=root, project="p_z7ne42dt", slug="diary", kind="diary"
+                bad; registry=root, project=PROJECT_UUID, slug="diary", kind="diary"
             ),
         )
         @test e isa ErrorException && occursin("kind must be one of", e.msg)
@@ -139,7 +139,7 @@ end
 
     with_git_fixture() do root, binding, src
         nb = joinpath(root, ".registry", "bindings", "second.toml")
-        new_binding(nb; registry=root, project="p_z7ne42dt", slug="second-question")
+        new_binding(nb; registry=root, project=PROJECT_UUID, slug="second-question")
         res = deposit(nb; src..., doc=DOC, source_repo=root, push=false)
         r, summary = Archeion.validate(root)
         @test isempty(r.errors) && length(summary) == 2 && res.parents == []
@@ -175,5 +175,60 @@ end
         @test length(readdir(joinpath(root, REC_REL, "revisions"))) == 1
         @test isempty(readdir(joinpath(root, "_incoming")))
         rm(bad; recursive=true)
+    end
+end
+
+@testset "deposit: what a binding says is checked where it is used, not only where it was written" begin
+    for (field, value, says) in (
+        ("slug", "../../elsewhere", "is not a slug"),
+        ("project", "p_z7ne42dt", "is not a UUID"),
+        ("record", "not-a-uuid", "is not a UUID"),
+        ("kind", "whatever", "is not one of"),
+    )
+        with_git_fixture() do root, binding, src
+            b = TOML.parsefile(binding)
+            b[field] = value
+            open(io -> TOML.print(io, b; sorted=true), binding, "w")
+            e = attempt(
+                () -> deposit(binding; src..., doc=DOC, source_repo=root, push=false)
+            )
+            @test e isa ErrorException && occursin(says, e.msg)
+            # and it was refused before anything was written outside the registry
+            @test !ispath(joinpath(dirname(root), "elsewhere"))
+            @test isempty(first(Archeion.validate(root)).errors)
+        end
+    end
+end
+
+@testset "deposit: a new record is refused the name another of its year already has" begin
+    with_git_fixture() do root, binding, src
+        second = joinpath(root, ".registry", "bindings", "twin.toml")
+        new_binding(
+            second;
+            registry=root,
+            project=PROJECT_UUID,
+            slug="logistic-map",              # the slug the fixture's record already has
+        )
+        e = attempt(() -> deposit(second; src..., doc=DOC, source_repo=root, push=false))
+        @test e isa ErrorException && occursin("already called logistic-map", e.msg)
+        @test commits(root) == 1                          # nothing was committed
+        @test isempty(first(Archeion.validate(root)).errors)
+    end
+end
+
+@testset "deposit: a new record puts itself in the index, and commits it there" begin
+    with_git_fixture() do root, binding, src
+        second = joinpath(root, ".registry", "bindings", "other.toml")
+        id = new_binding(
+            second; registry=root, project=PROJECT_UUID, slug="another-question"
+        )
+        res = deposit(second; src..., doc=DOC, source_repo=root, push=false)
+        @test occursin(id, read(joinpath(root, "registry.toml"), String))
+        committed = split(readchomp(`git -C $root show --name-only --format= HEAD`), '\n')
+        @test "registry.toml" in committed
+        # nothing of the registry's own is left uncommitted (the binding is this test's, and
+        # in real use lives in the repository that renders the report, not in this one)
+        @test isempty(readchomp(`git -C $root status --porcelain --untracked-files=no`))
+        @test isempty(first(Archeion.validate(root)).errors)
     end
 end

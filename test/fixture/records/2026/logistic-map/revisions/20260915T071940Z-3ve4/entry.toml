@@ -1,0 +1,39 @@
+parents = []
+spec = "registry/2"
+
+[anchors]
+local = ["orbits_fig1", "bifurcation_fig1", "bifurcation_tbl1", "decay_fig1"]
+stable = ["logistic", "orbits", "bifurcation", "oscillator", "decay"]
+
+[doc]
+status = "final"
+tags = ["example", "chaos"]
+title = "The logistic map, as a model record"
+
+[id]
+kind = "report"
+project = "005bfa5b-902e-4746-9855-996d4b2f174c"
+record = "fbb1435c-077a-459d-87b3-8b7f1a58c896"
+rev = "20260915T071940Z-3ve4"
+
+[migrated]
+dropped = [".deposit.toml", ".pinax-manifest.toml", "agent/.pinax-manifest.toml", "repro/reproduce.sh"]
+from = "archeion/0.3"
+original_date = "2026-09-15T07:19:39.705"
+path = "demo/logistic"
+
+[preservation]
+external = ["https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css", "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js", "https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"]
+level = "read"
+
+[source]
+captured = "publish"
+
+    [[source.repo]]
+    commit = "340c965b8c3a8fab38857671a410ecfe13107c31"
+    dirty = false
+    role = "render"
+    url = "https://github.com/QAtlasHub/archeion-demo.git"
+
+[time]
+frozen = 2026-09-15T07:19:40Z
