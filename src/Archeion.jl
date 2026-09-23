@@ -24,6 +24,7 @@ include("validate.jl")
 include("build.jl")
 include("provenance.jl")
 include("deposit.jl")
+include("remote.jl")
 
 """
     doc_fields(doc; tags = String[], question = nothing, claim = nothing) -> NamedTuple
@@ -43,8 +44,23 @@ and the render observation. The method for a `DataVault.Vault` is defined when D
 """
 function provenance_from end
 
+"""
+    publish(vault, recipe; binding, title, out, status, source_repo, remote = :pr, ...) -> NamedTuple
+
+Render a vault through `recipe`, deposit both faces as a new revision of the binding's record with
+the table of what was read, and send that commit to the shared registry. The one call a study
+makes; the method is defined when both Pinax and DataVault are loaded.
+
+`status` (`:trial` or `:final`) is required: what a revision vouches for is the author's to state
+(SPEC §5.4), not a default to inherit. `remote` is `:pr` (a branch and a pull request), `:push`
+(straight onto the current branch, rebasing once if the remote moved) or `:local` (commit only).
+Before anything is written the registry clone is brought to its remote, and the commit that
+rendered the report is checked for being published — a revision cites it.
+"""
+function publish end
+
 export deposit, new_binding
-public validate, build, anchors, doc_fields, provenance_from, main
+public validate, build, anchors, doc_fields, provenance_from, publish, main
 
 function usage(io=stderr)
     println(io, "usage: julia -m Archeion validate [root]")

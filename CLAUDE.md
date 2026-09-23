@@ -10,6 +10,10 @@ rendered reports, accumulated across projects in a git repository, readable with
 - `Archeion.validate(root) -> (report, summary)` · `Archeion.build(root[, out])` ·
   `new_binding(path; registry, project, slug, kind)` · `deposit(binding; gallery, agent, doc, source_repo)`
   · `Archeion.doc_fields(::Pinax.Document)` (extension) · `julia -m Archeion validate|build`.
+- `Archeion.publish(vault, recipe; binding, title, out, status, source_repo, remote)` (extension,
+  needs Pinax **and** DataVault) is render → deposit → push/PR in one call: the path every study
+  was copying. `status` is required — a revision's `trial`/`final` is the author's statement, and
+  Pinax's page default would otherwise make it silently `final`.
 
 ## Contracts that trip callers
 
