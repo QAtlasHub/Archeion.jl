@@ -43,6 +43,28 @@ deposit(".registry/bindings/phase.toml";          # every time: a new revision o
 beside the registry, validates the whole registry with it in place, takes it back out if that
 fails, and otherwise commits that one path and pushes.
 
+### From a vault, in one call
+
+With Pinax **and** DataVault loaded, `publish` is that whole path — render both faces, deposit
+them with the table of which bytes each parameter point contributed, and send the commit to the
+shared registry — so a study writes its recipe and nothing else:
+
+```julia
+using Archeion, Pinax, DataVault
+
+Archeion.publish(vault, recipe;
+                 binding = ".registry/bindings/phase.toml",
+                 title = "The phase diagram", out = "out/report/phase",
+                 status = :trial,             # required: `final` presents the claims (SPEC §5.4)
+                 source_repo = pwd(),
+                 remote = :pr)                # :pr | :push | :local
+```
+
+Before anything is written it brings the registry clone to its remote (refusing a dirty tree or a
+history that is not a fast-forward), and warns when the commit that rendered the report is not yet
+on the remote's default branch — the revision cites it, and a squash merge would leave that
+citation unresolvable.
+
 [QAtlasHub/archeion-demo](https://github.com/QAtlasHub/archeion-demo) is a registry with one record
 made this way.
 

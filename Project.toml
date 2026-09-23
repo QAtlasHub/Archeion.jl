@@ -1,6 +1,6 @@
 name = "Archeion"
 uuid = "4f7774e9-efb7-42d6-b735-122dcc7ea7b8"
-version = "0.5.0"
+version = "0.6.0"
 authors = ["sota shimozono <shimozono-sota631@g.ecc.u-tokyo.ac.jp>"]
 
 [deps]
@@ -15,6 +15,7 @@ Pinax = "e782a80a-1ac9-479e-ba2b-0f3433ef5b4f"
 
 [extensions]
 ArcheionDataVaultExt = "DataVault"
+ArcheionPinaxDataVaultExt = ["Pinax", "DataVault"]
 ArcheionPinaxExt = "Pinax"
 
 [compat]

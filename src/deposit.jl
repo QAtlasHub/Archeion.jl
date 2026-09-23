@@ -64,6 +64,13 @@ function new_binding(path; registry, project, slug, kind="report")
     return id
 end
 
+"The registry a binding names, as an absolute path: the binding stores it relative to itself."
+function registry_of(binding)
+    return normpath(
+        joinpath(dirname(abspath(binding)), TOML.parsefile(binding)["registry"])
+    )
+end
+
 function find_record(reg, id)
     base = joinpath(reg, "records")
     hits = [
@@ -223,7 +230,7 @@ function deposit(
     isfile(binding) ||
         error("no binding at $binding; create one with new_binding (once per record)")
     b = TOML.parsefile(binding)
-    reg = normpath(joinpath(dirname(abspath(binding)), b["registry"]))
+    reg = registry_of(binding)
     id = b["record"]
     r0, _ = validate(reg)
     isempty(r0.errors) || error(
