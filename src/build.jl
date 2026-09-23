@@ -86,9 +86,13 @@ comment_text(e) = something(getpath(e, "body", "text"), get(e, "text", nothing),
 const CSS = """
 /* The catalogue and the reports it links to are one thing to read, so they are one palette: these
    are Pinax's gallery defaults (its `src/themes/gallery.jl`), named here because this package
-   cannot depend on it, and checked against it by a test. There is deliberately no dark mode —
-   Pinax renders light, and a dark catalogue in front of light reports is a worse seam than any
-   shade. */
+   cannot depend on it, and checked against it by a test.
+
+   Dark mode is the same palette after dark, and it is only safe to offer because the reports
+   follow: a revision frozen before dark mode existed gets a derived dark layer in the site's copy
+   of it (dark.jl). A report whose stylesheet draws with a colour Archeion does not know keeps its
+   light one and says so — that is the one page this can still open bright, and `build` reports
+   how many there are. */
 :root{--bg:#fafafa;--fg:#24292f;--mut:#57606a;--line:#e2e5e9;--card:#fff;--acc:#0366d6;
 --soft:#f6f8fa;--warn:#9a6700;--bad:#a40e26;--ok:#1a7f37;
 /* the contribution graph's five steps, empty to busiest */
@@ -107,6 +111,8 @@ border-radius:6px;background:var(--card);color:var(--fg)}.filters input{flex:1;m
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .card{display:block;border:1px solid var(--line);border-radius:8px;background:var(--card);
 color:inherit;text-decoration:none;overflow:hidden}.card:hover{border-color:var(--acc)}
+/* A thumbnail holds a figure, and a figure is drawn on white whatever the page around it is —
+   the same exception `Archeion.DRAWN_ON_WHITE` makes inside a report. */
 .thumb{height:140px;background:#fff;display:flex;align-items:center;justify-content:center;
 border-bottom:1px solid var(--line)}.thumb img{max-width:100%;max-height:140px}
 .body{padding:10px 12px}.title{font-weight:600}.meta{font-size:.85rem;color:var(--mut)}
@@ -151,6 +157,12 @@ font-size:.8rem;border-top:1px solid var(--line)}
 @media (max-width:640px){.burger{display:block;order:2}
 header.site nav{order:3;flex-basis:100%;display:none;flex-direction:column;gap:6px}
 #m:checked~nav{display:flex}}
+/* The same palette after dark, and nothing else: every rule above already names a token, so
+   this is the whole of it. Values are `Archeion.DARK` (dark.jl), which is also what the derived
+   layer gives a report frozen before any of this existed. */
+@media (prefers-color-scheme: dark){
+:root{$(join(("--$k:$(DARK[k])" for k in
+("bg","fg","mut","line","card","acc","soft","warn","bad","ok","l0","l1","l2","l3","l4")), ";"))}}
 """
 
 # Everything the search needs is already in the page, so it works from a file:// window as well as
@@ -651,6 +663,9 @@ function copy_revision(src, dest)
         name in SITE_SKIP && isdir(joinpath(src, name)) && continue
         cp(joinpath(src, name), joinpath(dest, name))
     end
+    # The copy may carry what the revision cannot: a revision is frozen under its own SHA256SUMS,
+    # and most of them were rendered before there was a dark mode to render (dark.jl).
+    return darken_site_copy!(dest)
 end
 
 function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
@@ -668,11 +683,18 @@ function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
     mkpath(out)
     write(joinpath(out, MARKER), "written by tools/build.jl; replaced on every build\n")
     projects, records = read_registry(root)
+    dark = (; dark=0, already=0, colourless=0, unknown=0)
     for rec in records
         dest = joinpath(out, rec.rel)
         mkpath(joinpath(dest, "revisions"))
         for rev in rec.revs
-            copy_revision(rev.dir, joinpath(dest, "revisions", rev.name))
+            d = copy_revision(rev.dir, joinpath(dest, "revisions", rev.name))
+            dark = (;
+                dark=dark.dark + d.dark,
+                already=dark.already + d.already,
+                colourless=dark.colourless + d.colourless,
+                unknown=dark.unknown + d.unknown,
+            )
         end
         write(joinpath(dest, "index.html"), record_page(site, projects, rec))
     end
@@ -680,5 +702,7 @@ function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
     bad = broken_links(out)
     isempty(bad) || error("the site has broken links:\n  " * join(bad, "\n  "))
     bytes = sum(filesize(joinpath(d, f)) for (d, _, fs) in walkdir(out) for f in fs)
-    return (; out, records=length(records), bytes)
+    # How many reports a reader in the dark will meet in the dark, on the normal return path
+    # whether or not anyone asked: `unknown` is the count that is not supposed to be above zero.
+    return (; out, records=length(records), bytes, dark)
 end
