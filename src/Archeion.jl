@@ -25,6 +25,7 @@ include("build.jl")
 include("provenance.jl")
 include("deposit.jl")
 include("remote.jl")
+include("pages.jl")
 
 """
     doc_fields(doc; tags = String[], question = nothing, claim = nothing) -> NamedTuple
@@ -60,11 +61,12 @@ rendered the report is checked for being published — a revision cites it.
 function publish end
 
 export deposit, new_binding
-public validate, build, anchors, doc_fields, provenance_from, publish, main
+public validate, build, anchors, doc_fields, provenance_from, publish, setup_pages, main
 
 function usage(io=stderr)
     println(io, "usage: julia -m Archeion validate [root]")
     println(io, "       julia -m Archeion build [root] [out]")
+    println(io, "       julia -m Archeion pages [root] [branch]   # GitHub Pages workflows")
     return 2
 end
 
@@ -97,6 +99,10 @@ function (@main)(args)
             "built $(res.records) record(s) into $(res.out) ",
             "($(round(res.bytes / 1024; digits = 1)) KiB)",
         )
+        return 0
+    elseif cmd == "pages"
+        branch = length(rest) >= 2 ? rest[2] : "master"
+        pages_instructions(stdout, root, setup_pages(root; branch=branch), _version())
         return 0
     end
     return usage()
