@@ -49,10 +49,24 @@ end
     @test occursin("system-ui", css_value(Archeion.CSS, "body", "font"))
 end
 
-@testset "theme: no dark mode, because the reports have none" begin
-    # A catalogue that flips to dark in front of light reports is a worse seam than any shade.
-    @test !occursin("prefers-color-scheme", Archeion.CSS)
-    @test !occursin("prefers-color-scheme", Pinax._GALLERY_CSS)
+@testset "theme: dark mode, because now the reports follow" begin
+    # This used to assert that neither side had one. A catalogue that flips to dark in front of
+    # light reports is a worse seam than any shade — so what changed is not the resolve, it is
+    # that the reports can be brought along: the site's copy of a revision gets a derived dark
+    # layer (dark.jl), including revisions frozen years before any of this.
+    @test occursin("prefers-color-scheme: dark", Archeion.CSS)
+    # every token the light palette defines is redefined after dark, and with a different value
+    light = match(r":root\{(.*?)\}"s, Archeion.CSS)[1]
+    dark = match(r"prefers-color-scheme: dark\).*?:root\{(.*?)\}"s, Archeion.CSS)[1]
+    names(block) = Set(m[1] for m in eachmatch(r"(--[a-z0-9-]+):", block))
+    @test names(light) == names(dark)
+    for n in names(light)
+        @test css_value(Archeion.CSS, ":root", n) != nothing
+        @test occursin(Regex("\\Q$n\\E:([^;}]+)"), dark)
+    end
+    l = Dict(m[1] => m[2] for m in eachmatch(r"(--[a-z0-9-]+):([^;}]+)", light))
+    d = Dict(m[1] => m[2] for m in eachmatch(r"(--[a-z0-9-]+):([^;}]+)", dark))
+    @test all(n -> l[n] != d[n], keys(l))          # none of them merely repeated
 end
 
 @testset "theme: every colour the site draws with comes from a token" begin

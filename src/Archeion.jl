@@ -2,7 +2,7 @@
     Archeion
 
 A registry of rendered research results, kept as plain files in a git repository and read with
-nothing but a text viewer if need be. The format is `SPEC.md` (`spec = "registry/1"`); this
+nothing but a text viewer if need be. The format is `SPEC.md` (`spec = "registry/2"`); this
 package is one implementation of it, depending on the standard library only.
 
 - [`validate`](@ref) checks a registry against the format.
@@ -27,6 +27,7 @@ using TOML
 include("ids.jl")
 include("index.jl")
 include("validate.jl")
+include("dark.jl")
 include("build.jl")
 include("provenance.jl")
 include("deposit.jl")

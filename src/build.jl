@@ -86,9 +86,11 @@ comment_text(e) = something(getpath(e, "body", "text"), get(e, "text", nothing),
 const CSS = """
 /* The catalogue and the reports it links to are one thing to read, so they are one palette: these
    are Pinax's gallery defaults (its `src/themes/gallery.jl`), named here because this package
-   cannot depend on it, and checked against it by a test. There is deliberately no dark mode —
-   Pinax renders light, and a dark catalogue in front of light reports is a worse seam than any
-   shade. */
+   cannot depend on it, and checked against it by a test.
+
+   Dark mode is the same palette after dark, and it is only safe to offer because the reports
+   follow: a revision frozen before dark mode existed gets a derived dark layer in the site's copy
+   of it (dark.jl), so nothing here opens a light page. */
 :root{--bg:#fafafa;--fg:#24292f;--mut:#57606a;--line:#e2e5e9;--card:#fff;--acc:#0366d6;
 --soft:#f6f8fa;--warn:#9a6700;--bad:#a40e26;--ok:#1a7f37;
 /* the contribution graph's five steps, empty to busiest */
@@ -151,6 +153,13 @@ font-size:.8rem;border-top:1px solid var(--line)}
 @media (max-width:640px){.burger{display:block;order:2}
 header.site nav{order:3;flex-basis:100%;display:none;flex-direction:column;gap:6px}
 #m:checked~nav{display:flex}}
+/* The same palette after dark, and nothing else: every rule above already names a token, so
+   this is the whole of it. Values are `Archeion.DARK` (dark.jl), which is also what the derived
+   layer gives a report frozen before any of this existed. */
+@media (prefers-color-scheme: dark){
+:root{--bg:#0d1117;--fg:#e6edf3;--mut:#9198a1;--line:#30363d;--card:#161b22;--acc:#4493f8;
+--soft:#1c2128;--warn:#d29922;--bad:#f85149;--ok:#3fb950;
+--l0:#161b22;--l1:#0e4429;--l2:#006d32;--l3:#26a641;--l4:#39d353}}
 """
 
 # Everything the search needs is already in the page, so it works from a file:// window as well as
@@ -651,6 +660,9 @@ function copy_revision(src, dest)
         name in SITE_SKIP && isdir(joinpath(src, name)) && continue
         cp(joinpath(src, name), joinpath(dest, name))
     end
+    # The copy may carry what the revision cannot: a revision is frozen under its own SHA256SUMS,
+    # and most of them were rendered before there was a dark mode to render (dark.jl).
+    return darken_site_copy!(dest)
 end
 
 function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))

@@ -52,6 +52,13 @@ function validated(mutate!)
         return (; errors=r.errors, warnings=r.warnings, summary)
     end
 end
+# Does the revision in `dir` still check out against the SHA256SUMS beside it?
+function sums_verify(dir)
+    return success(
+        pipeline(setenv(`sha256sum -c SHA256SUMS`; dir=dir); stdout=devnull, stderr=devnull)
+    )
+end
+
 mentions(lines, s) = any(l -> occursin(s, l), lines)
 
 edit!(path, from, to) = write(path, replace(read(path, String), from => to; count=1))
