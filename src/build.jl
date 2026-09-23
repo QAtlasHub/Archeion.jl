@@ -109,17 +109,29 @@ th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertic
 .yanked td{text-decoration:line-through;color:var(--mut)}.wrap{overflow-x:auto}
 .event{border-left:3px solid var(--line);padding:4px 10px;margin:8px 0}
 .event pre{white-space:pre-wrap;font:inherit;margin:4px 0 0}
+.bars{display:flex;align-items:flex-end;gap:3px;height:70px;margin:10px 0 4px}
+.bar{flex:1;max-width:28px;display:flex;flex-direction:column;justify-content:flex-end;
+height:100%;text-align:center}.bar>div{background:var(--acc);border-radius:2px 2px 0 0;min-height:2px}
+.bar span{font-size:.7rem;color:var(--mut)}h2{font-size:1.05rem;margin:22px 0 6px}
+.pick{color:var(--acc)}
 """
 
+# Everything the search needs is already in the page, so it works from a file:// window as well as
+# over http (ssh-browser gives a real origin, but the site must not depend on having one). Words
+# are ANDed: typing two of them narrows rather than widens.
 const FILTER_JS = """
 (function(){var q=function(s){return document.querySelector(s)};
 function apply(){var p=q('#f-project').value,s=q('#f-status').value,t=q('#f-tag').value,
-x=q('#f-text').value.toLowerCase(),n=0;
-document.querySelectorAll('.card').forEach(function(c){var ok=(!p||c.dataset.project===p)&&
-(!s||c.dataset.status===s)&&(!t||(' '+c.dataset.tags+' ').indexOf(' '+t+' ')>=0)&&
-(!x||c.dataset.text.indexOf(x)>=0);c.style.display=ok?'':'none';if(ok)n++});
+w=q('#f-text').value.toLowerCase().split(/\\s+/).filter(Boolean),n=0;
+document.querySelectorAll('.card').forEach(function(c){var d=c.dataset,
+ok=(!p||d.project===p)&&(!s||d.status===s)&&(!t||(' '+d.tags+' ').indexOf(' '+t+' ')>=0)&&
+w.every(function(x){return d.text.indexOf(x)>=0});
+c.style.display=ok?'':'none';if(ok)n++});
 q('#shown').textContent=n}
 ['#f-project','#f-status','#f-tag','#f-text'].forEach(function(id){q(id).addEventListener('input',apply)});
+document.querySelectorAll('.pick').forEach(function(a){a.addEventListener('click',function(e){
+e.preventDefault();q('#f-project').value=a.dataset.project;apply();
+document.querySelector('.cards').scrollIntoView({behavior:'smooth'})})});
 apply()})();
 """
 
@@ -138,6 +150,84 @@ function options(values)
         ),
         "",
     )
+end
+
+# Everything about a record a reader might search for: not only the current revision's title, but
+# every revision's, the question and claim it states, its tags, its identifiers, and what people
+# said about it in comments. A search that only sees card titles finds what you already see.
+function searchable(rec, proj)
+    e = shown(rec).entry
+    parts = [proj, rec.record["id"], get(rec.record, "kind", "report")]
+    for r in rec.revs
+        push!(parts, r.entry["doc"]["title"], r.name)
+        for k in ("question", "claim")
+            v = getpath(r.entry, "doc", k)
+            v === nothing || push!(parts, string(v))
+        end
+        append!(parts, String.(something(getpath(r.entry, "doc", "tags"), String[])))
+    end
+    for ev in rec.events
+        push!(parts, get(ev, "kind", ""))
+        push!(parts, comment_text(ev))
+    end
+    return lowercase(join(parts, " "))
+end
+
+month(t) = t isa DateTime ? Dates.format(t, "yyyy-mm") : ""
+
+# The registry at a glance: who has how much, and when it was last touched. A catalogue that only
+# lists cards answers "what is there"; this answers "where is the work".
+function overview(projects, records)
+    rows = Dict{String,Any}()
+    for rec in records
+        proj = get(
+            get(projects, rec.record["project"], Dict()), "name", rec.record["project"]
+        )
+        r = get!(
+            rows, proj, Dict("records" => 0, "revisions" => 0, "final" => 0, "last" => "")
+        )
+        r["records"] += 1
+        r["revisions"] += length(rec.revs)
+        shown(rec).entry["doc"]["status"] == "final" && (r["final"] += 1)
+        d = day(shown(rec).entry["time"]["frozen"])
+        d > r["last"] && (r["last"] = d)
+    end
+    isempty(rows) && return ""
+    body = IOBuffer()
+    for proj in sort(collect(keys(rows)))
+        r = rows[proj]
+        print(
+            body,
+            """<tr><td><a href="#" class="pick" data-project="$(html_escape(proj))">$(html_escape(proj))</a></td>
+<td>$(r["records"])</td><td>$(r["revisions"])</td><td>$(r["final"]) final</td><td>$(r["last"])</td></tr>
+""",
+        )
+    end
+    return """<h2>Projects</h2><div class="wrap"><table><tr><th>project</th><th>records</th>
+<th>revisions</th><th>of them</th><th>last frozen</th></tr>$(String(take!(body)))</table></div>"""
+end
+
+# When revisions were frozen, by month, as bars whose height is a count. Twelve months of nothing
+# is itself worth seeing.
+function activity(records)
+    per = Dict{String,Int}()
+    for rec in records, r in rec.revs
+        m = month(r.entry["time"]["frozen"])
+        isempty(m) || (per[m] = get(per, m, 0) + 1)
+    end
+    isempty(per) && return ""
+    months = sort(collect(keys(per)))
+    top = maximum(values(per))
+    bars = join(
+        (
+            """<div class="bar" title="$(html_escape(m)): $(per[m]) revision(s)">
+<div style="height:$(round(Int, 100 * per[m] / top))%"></div><span>$(html_escape(m[6:7]))</span></div>"""
+            for m in months
+        ),
+        "",
+    )
+    return """<h2>Activity</h2><div class="bars">$bars</div>
+    <div class="mut">$(first(months)) to $(last(months)), $(sum(values(per))) revision(s)</div>"""
 end
 
 function index_page(name, projects, records)
@@ -174,11 +264,12 @@ function index_page(name, projects, records)
         else
             "<span class=\"badge $(st == "conflict" ? "warn" : "bad")\">$st</span>"
         end
-        text = lowercase(join([e["doc"]["title"], proj, rtags...], " "))
+        text = searchable(rec, proj)
         print(
             cards,
             """<a class="card" href="$(html_escape(rec.rel))/index.html" data-project="$(html_escape(proj))"
-data-status="$(html_escape(status))" data-tags="$(html_escape(join(rtags, " ")))" data-text="$(html_escape(text))">
+data-status="$(html_escape(status))" data-tags="$(html_escape(join(rtags, " ")))"
+data-month="$(html_escape(month(e["time"]["frozen"])))" data-text="$(html_escape(text))">
 <div class="thumb">$img</div><div class="body">$badge<div class="title">$(html_escape(e["doc"]["title"]))</div>
 <div class="meta">$(html_escape(proj)) · $(html_escape(status)) · $(length(rec.revs)) revision(s) · $(day(e["time"]["frozen"]))</div>
 $(isempty(rtags) ? "" : "<div class=\"meta\">$(html_escape(join(rtags, ", ")))</div>")</div></a>
@@ -195,7 +286,10 @@ $(isempty(rtags) ? "" : "<div class=\"meta\">$(html_escape(join(rtags, ", ")))</
     <div class="filters"><select id="f-project"><option value="">all projects</option>$(options(pnames))</select>
     <select id="f-status"><option value="">trial and final</option><option>trial</option><option>final</option></select>
     <select id="f-tag"><option value="">all tags</option>$(options(tags))</select>
-    <input id="f-text" type="search" placeholder="search titles, projects, tags"></div>
+    <input id="f-text" type="search" placeholder="search titles, questions, claims, tags, comments, ids"></div>
+    $(overview(projects, records))
+    $(activity(records))
+    <h2>Records</h2>
     <div class="mut"><span id="shown">$(length(records))</span> shown</div>
     <div class="cards">$(String(take!(cards)))</div><script>$FILTER_JS</script>
     """

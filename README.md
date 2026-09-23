@@ -33,14 +33,32 @@ julia -m Archeion pages path/to/registry       # then: Settings -> Pages -> Sour
 ```
 
 A **private repository's Pages site is public** on every plan but Enterprise Cloud. For a registry
-that must not be, read it locally instead:
+that must not be, build it on a machine you reach and read it over SSH:
 
 ```sh
-julia -m Archeion build path/to/registry       # open _site/index.html
+julia -m Archeion pages path/to/registry \
+      --runner='[self-hosted, my-box]' --site=/home/me/site/my-registry
 ```
 
-or serve `_site` from somewhere access is controlled. Nothing has to be running for the files to
-be read, which is the point.
+Every push then builds the catalogue into that directory — built beside it and renamed into place,
+so a reader never meets a half-written site — and nothing is published. Open it with
+[ssh-browser](https://github.com/QAtlasHub/ssh-browser), which gives those files a real http
+origin:
+
+```sh
+ssh-browser my-box /home/me/site/my-registry/index.html
+```
+
+`julia -m Archeion build path/to/registry` does the same by hand, into `_site/`. The catalogue's
+own search needs no origin, so `file://` works too; anything that fetches does not.
+
+## What the catalogue shows
+
+One page: every project with its record and revision counts and when it was last frozen, the
+months revisions were frozen in, and a card per record. The search reads what a record *says* —
+every revision's title, the question and claim it states, its tags, its identifiers, and the
+comments left on it — so a word from a comment finds the record it was left on. Words narrow:
+two of them means both.
 
 ## Adding a result
 

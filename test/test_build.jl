@@ -26,6 +26,34 @@ function built(mutate!)
     end
 end
 
+@testset "the index answers where the work is, and finds it by what it says" begin
+    b = built() do root, rec, rev
+        edit!(
+            entry(rev),
+            "status = \"final\"",
+            "status = \"final\"\nquestion = \"does the boundary matter at all\"",
+        )
+        Archeion.write_sums(rev)
+        event!(rec, "comment", REV_NAME; extra="text = \"the third peak is an artefact\"\n")
+    end
+    @test b.res isa NamedTuple
+
+    # the overview: one row per project, and a bar per month that has revisions
+    @test occursin("<h2>Projects</h2>", b.index) && occursin("<h2>Activity</h2>", b.index)
+    @test occursin("class=\"pick\" data-project=\"logistic map\"", b.index) ||
+        occursin("class=\"pick\"", b.index)
+    @test count("class=\"bar\"", b.index) == 1          # every revision is in one month
+
+    # the search index: not only the title, but what the record asks, is tagged, and is called,
+    # and what was said about it afterwards
+    text = match(r"data-text=\"([^\"]*)\"", b.index)[1]
+    for word in
+        ("logistic", "r_4aehb2y5", "does the boundary matter", "example", "artefact")
+        @test occursin(word, text)
+    end
+    @test occursin("data-month=\"2026-09\"", b.index)
+end
+
 @testset "build" begin
     b = built((root, rec, rev) -> nothing)
     @test b.res isa NamedTuple && b.res.records == 1

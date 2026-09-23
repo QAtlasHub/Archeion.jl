@@ -11,7 +11,10 @@ package is one implementation of it, depending on the standard library only.
 - [`doc_fields`](@ref) (with Pinax loaded) takes what an entry needs from a rendered document.
 - [`provenance_from`](@ref) (with DataVault loaded) takes per-point provenance from a vault.
 
-From a shell: `julia -m Archeion validate [root]`, `julia -m Archeion build [root] [out]`.
+- [`setup_pages`](@ref) writes the workflows that publish the catalogue as a site.
+
+From a shell: `julia -m Archeion validate [root]`, `julia -m Archeion build [root] [out]`,
+`julia -m Archeion pages [root] [--branch=B] [--runner=R] [--site=DIR]`.
 """
 module Archeion
 
@@ -66,8 +69,25 @@ public validate, build, anchors, doc_fields, provenance_from, publish, setup_pag
 function usage(io=stderr)
     println(io, "usage: julia -m Archeion validate [root]")
     println(io, "       julia -m Archeion build [root] [out]")
-    println(io, "       julia -m Archeion pages [root] [branch]   # GitHub Pages workflows")
+    println(
+        io, "       julia -m Archeion pages [root] [--branch=B] [--runner=R] [--site=DIR]"
+    )
+    println(
+        io, "         writes the workflows that publish the catalogue: GitHub Pages, or"
+    )
+    println(io, "         with --site a directory on the runner's machine, read over SSH")
     return 2
+end
+
+# `--flag=value` anywhere among the arguments, and whatever is left of them.
+function flags(rest)
+    opts = Dict{String,String}()
+    positional = String[]
+    for a in rest
+        m = match(r"^--([a-z-]+)=(.*)$", a)
+        m === nothing ? push!(positional, a) : (opts[m[1]] = String(m[2]))
+    end
+    return opts, positional
 end
 
 """
@@ -78,7 +98,8 @@ when there is an error; `build [root] [out]` writes the site (by default to `<ro
 """
 function (@main)(args)
     isempty(args) && return usage()
-    cmd, rest = args[1], args[2:end]
+    cmd = args[1]
+    opts, rest = flags(args[2:end])
     root = isempty(rest) ? pwd() : rest[1]
     if cmd == "validate"
         r, summary = validate(root)
@@ -101,8 +122,15 @@ function (@main)(args)
         )
         return 0
     elseif cmd == "pages"
-        branch = length(rest) >= 2 ? rest[2] : "master"
-        pages_instructions(stdout, root, setup_pages(root; branch=branch), _version())
+        written = setup_pages(
+            root;
+            branch=get(opts, "branch", "master"),
+            runner=get(opts, "runner", "ubuntu-latest"),
+            site=get(opts, "site", nothing),
+        )
+        pages_instructions(
+            stdout, root, written, _version(); site=get(opts, "site", nothing)
+        )
         return 0
     end
     return usage()
