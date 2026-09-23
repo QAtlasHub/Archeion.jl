@@ -11,6 +11,7 @@ package is one implementation of it, depending on the standard library only.
 - [`doc_fields`](@ref) (with Pinax loaded) takes what an entry needs from a rendered document.
 - [`provenance_from`](@ref) (with DataVault loaded) takes per-point provenance from a vault.
 
+- [`init`](@ref) starts a registry: its directories, its `registry.toml`, its workflows.
 - [`setup_pages`](@ref) writes the workflows that publish the catalogue as a site.
 
 From a shell: `julia -m Archeion validate [root]`, `julia -m Archeion build [root] [out]`,
@@ -29,6 +30,7 @@ include("provenance.jl")
 include("deposit.jl")
 include("remote.jl")
 include("pages.jl")
+include("init.jl")
 
 """
     doc_fields(doc; tags = String[], question = nothing, claim = nothing) -> NamedTuple
@@ -64,10 +66,12 @@ rendered the report is checked for being published — a revision cites it.
 function publish end
 
 export deposit, new_binding
-public validate, build, anchors, doc_fields, provenance_from, publish, setup_pages, main
+public validate,
+    build, anchors, doc_fields, provenance_from, publish, setup_pages, init, main
 
 function usage(io=stderr)
-    println(io, "usage: julia -m Archeion validate [root]")
+    println(io, "usage: julia -m Archeion init [root] [--name=N] [--title=T] [--tagline=S]")
+    println(io, "       julia -m Archeion validate [root]")
     println(io, "       julia -m Archeion build [root] [out]")
     println(
         io, "       julia -m Archeion pages [root] [--branch=B] [--runner=R] [--site=DIR]"
@@ -101,7 +105,20 @@ function (@main)(args)
     cmd = args[1]
     opts, rest = flags(args[2:end])
     root = isempty(rest) ? pwd() : rest[1]
-    if cmd == "validate"
+    if cmd == "init"
+        name = get(opts, "name", basename(abspath(root)))
+        written = init(
+            root;
+            name=name,
+            title=get(opts, "title", name),
+            tagline=get(opts, "tagline", ""),
+            branch=get(opts, "branch", "master"),
+            runner=get(opts, "runner", "ubuntu-latest"),
+            site=get(opts, "site", nothing),
+        )
+        init_instructions(stdout, root, written, name)
+        return 0
+    elseif cmd == "validate"
         r, summary = validate(root)
         foreach(s -> println("  ", s), summary)
         foreach(w -> println("warning: ", w), r.warnings)

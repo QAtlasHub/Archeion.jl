@@ -1,0 +1,81 @@
+# init.jl — start a registry, with the file that says what it is.
+#
+# Until now a registry began by hand: make the directories, write `registry.toml`, remember what
+# belongs in `.gitignore`, generate the workflows. Each of those is a place to forget something,
+# and the one that mattered most was the easiest to skip — `[site]`, which is how the catalogue
+# gets its name and its links instead of being titled after whatever the directory is called.
+
+const GITIGNORE = """
+# Derived, never committed (SPEC.md §9): the site, and a deposit in progress.
+_site/
+_incoming/
+archeion-env/
+"""
+
+function registry_toml(name, title, tagline)
+    return """
+# What this registry is, for a reader who finds it without its tools.
+spec = "registry/1"                       # the format: SPEC.md in QAtlasHub/Archeion.jl
+name = "$name"
+implementation = "Archeion.jl v$(_version())"   # the version CI validates and builds with
+
+# The catalogue's banner. Everything here is yours to edit; with only `title` set it is complete.
+[site]
+title = "$title"
+tagline = "$tagline"
+footer = ""
+
+# Links for the banner, and for the menu on a narrow screen. A URL with a scheme opens out of the
+# site; anything else is a path inside it.
+# [[site.links]]
+# text = "The lab"
+# url = "https://example.org"
+"""
+end
+
+"""
+    init(root; name = basename(root), title = name, tagline = "", pages = true, kw...) -> Vector{String}
+
+Start a registry at `root`: the directories a `registry/1` tree needs, `registry.toml` with its
+`[site]` banner, a `.gitignore` for what is derived, and — unless `pages = false` — the workflows
+that check it and publish its catalogue (`kw...` reaches [`setup_pages`](@ref): `branch`, `runner`,
+`site`). Returns the paths written, relative to `root`. Refuses a `root` that already holds a
+registry rather than writing over what is there.
+"""
+function init(
+    root; name=basename(abspath(root)), title=name, tagline="", pages::Bool=true, kw...
+)
+    isfile(joinpath(root, "registry.toml")) &&
+        error("$root already holds a registry.toml; init starts a new registry")
+    written = String[]
+    for d in ("projects", "records")
+        mkpath(joinpath(root, d))
+        # git does not carry an empty directory, and a registry with neither is still a registry.
+        keep = joinpath(d, ".gitkeep")
+        write(joinpath(root, keep), "")
+        push!(written, keep)
+    end
+    write(joinpath(root, "registry.toml"), registry_toml(name, title, tagline))
+    push!(written, "registry.toml")
+    gitignore = joinpath(root, ".gitignore")
+    if !isfile(gitignore)
+        write(gitignore, GITIGNORE)
+        push!(written, ".gitignore")
+    end
+    pages && append!(written, setup_pages(root; kw...))
+    return written
+end
+
+function init_instructions(io, root, written, name)
+    foreach(p -> println(io, "wrote ", p), written)
+    println(io)
+    println(
+        io, "\"$name\" is empty and valid. What a reader sees first — its title, tagline"
+    )
+    println(
+        io, "and links — is `[site]` in registry.toml; edit that now rather than later."
+    )
+    println(io, "Then: git init, commit, and from the repository that renders the reports,")
+    println(io, "`new_binding` once per record and `publish` for every revision of it.")
+    return nothing
+end

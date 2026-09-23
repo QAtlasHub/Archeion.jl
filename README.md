@@ -8,13 +8,31 @@ implementation of it and depends on the standard library only.
 ```julia
 using Archeion
 
+Archeion.init("path/to/registry"; title = "The Registry")   # once: its directories and its config
 Archeion.validate("path/to/registry")          # (report, summary): errors, warnings, records
 Archeion.build("path/to/registry")             # a static site in _site/, relative links only
 ```
 
+`init` writes `registry.toml`, whose `[site]` is what a reader meets first — the banner's title,
+its tagline, the links that become a menu on a narrow screen, and a footer:
+
+```toml
+[site]
+title = "The Registry"
+tagline = "one question per record"
+footer = ""
+
+[[site.links]]
+text = "The lab"
+url = "https://example.org"
+```
+
+Nothing there is required: a registry that says none of it is titled after itself.
+
 From a shell, the same two as a CI job would run them:
 
 ```sh
+julia -m Archeion init path/to/registry --title="The Registry"
 julia -m Archeion validate path/to/registry    # exit 1 on any error
 julia -m Archeion build path/to/registry       # exit non-zero if a link in the site is broken
 ```
