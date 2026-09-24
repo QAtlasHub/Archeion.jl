@@ -19,7 +19,7 @@ end
 
 @testset "setup_pages: both workflows, pinned to the version that wrote them" begin
     root = mktempdir()
-    written = Archeion.setup_pages(root; version="9.9.9")
+    written = Archeion.setup_pages(root; version="9.9.9").written
     @test written == [
         joinpath(".github", "workflows", "pages.yml"),
         joinpath(".github", "workflows", "validate.yml"),
@@ -50,7 +50,7 @@ end
     write(joinpath(root, "registry.toml"), "spec = \"registry/1\"\nname = \"t\"\n")
     said = sprint() do io
         Archeion.pages_instructions(
-            io, root, Archeion.setup_pages(root), Archeion._version()
+            io, root, Archeion.setup_pages(root).written, Archeion._version()
         )
     end
     @test occursin("Settings -> Pages", said) && occursin("GitHub Actions", said)
@@ -63,7 +63,7 @@ end
     )
     said = sprint() do io
         Archeion.pages_instructions(
-            io, root, Archeion.setup_pages(root), Archeion._version()
+            io, root, Archeion.setup_pages(root).written, Archeion._version()
         )
     end
     @test occursin("make the two agree", said)
@@ -84,7 +84,7 @@ end
     root = mktempdir()
     written = Archeion.setup_pages(
         root; version="9.9.9", runner="[self-hosted, rosina]", site="/home/x/site/reg"
-    )
+    ).written
     @test written == [
         joinpath(".github", "workflows", "site.yml"),
         joinpath(".github", "workflows", "validate.yml"),
@@ -150,4 +150,16 @@ end
     end
     @test sort(readdir(parent)) == ["reg", "reg.previous", "swap.sh"]
     rm(parent; recursive=true)
+end
+
+@testset "pages: what it says it wrote is one file per line" begin
+    # It took a NamedTuple where it wanted the paths and printed the vector itself, and every
+    # assertion still passed — they all looked for a substring that was in there either way.
+    root = mktempdir()
+    io = IOBuffer()
+    Archeion.pages_instructions(io, root, Archeion.setup_pages(root).written, "9.9.9")
+    wrote = [l for l in split(String(take!(io)), '\n') if startswith(l, "wrote ")]
+    @test wrote ==
+        ["wrote .github/workflows/pages.yml", "wrote .github/workflows/validate.yml"]
+    rm(root; recursive=true)
 end

@@ -72,6 +72,10 @@ function publish end
 export deposit, new_binding
 public validate,
     reindex!,
+    registry_of,
+    sync!,
+    check_source_published,
+    publish_revision!,
     migrate!,
     build,
     anchors,
@@ -127,11 +131,11 @@ function (@main)(args)
             name=name,
             title=get(opts, "title", name),
             tagline=get(opts, "tagline", ""),
-            branch=get(opts, "branch", "master"),
+            branch=get(opts, "branch", default_branch(root)),
             runner=get(opts, "runner", "ubuntu-latest"),
             site=get(opts, "site", nothing),
         )
-        init_instructions(stdout, root, written, name)
+        init_instructions(stdout, root, written.written, name)
         return 0
     elseif cmd == "reindex"
         n = reindex!(root)
@@ -171,12 +175,12 @@ function (@main)(args)
     elseif cmd == "pages"
         written = setup_pages(
             root;
-            branch=get(opts, "branch", "master"),
+            branch=get(opts, "branch", default_branch(root)),
             runner=get(opts, "runner", "ubuntu-latest"),
             site=get(opts, "site", nothing),
         )
         pages_instructions(
-            stdout, root, written, _version(); site=get(opts, "site", nothing)
+            stdout, root, written.written, _version(); site=get(opts, "site", nothing)
         )
         return 0
     end

@@ -37,7 +37,7 @@ footer = ""
 end
 
 """
-    init(root; name = basename(root), title = name, tagline = "", pages = true, kw...) -> Vector{String}
+    init(root; name = basename(root), title = name, tagline = "", pages = true, kw...) -> (; written, skipped)
 
 Start a registry at `root`: the directories a `registry/1` tree needs, `registry.toml` with its
 `[site]` banner, a `.gitignore` for what is derived, and — unless `pages = false` — the workflows
@@ -50,7 +50,7 @@ function init(
 )
     isfile(registry_file(root)) &&
         error("$root already holds a $INDEX_FILE; init starts a new registry")
-    written = String[]
+    written, skipped = String[], String[]
     for d in ("projects", "records")
         mkpath(joinpath(root, d))
         # git does not carry an empty directory, and a registry with neither is still a registry.
@@ -64,9 +64,17 @@ function init(
     if !isfile(gitignore)
         write(gitignore, GITIGNORE)
         push!(written, ".gitignore")
+    else
+        # Yours, and not ours to overwrite. A `Vector{String}` of what was written could not say
+        # the difference between this and having written it.
+        push!(skipped, ".gitignore")
     end
-    pages && append!(written, setup_pages(root; kw...))
-    return written
+    if pages
+        p = setup_pages(root; kw...)
+        append!(written, p.written)
+        append!(skipped, p.skipped)
+    end
+    return (; written, skipped)
 end
 
 function init_instructions(io, root, written, name)

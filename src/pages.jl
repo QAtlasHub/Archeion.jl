@@ -12,6 +12,24 @@ const SITE_WORKFLOW = "site.yml"
 
 _version() = string(pkgversion(@__MODULE__))
 
+"""
+    default_branch(root) -> String
+
+The branch the workflows should watch: the one `root` is on, or what its remote calls default.
+Asked rather than assumed — GitHub has created repositories on `main` since 2020, and a workflow
+whose `on: push: branches:` names a branch that does not exist never runs and never says so.
+"""
+function default_branch(root)
+    for args in (
+        ("symbolic-ref", "--short", "refs/remotes/origin/HEAD"),
+        ("rev-parse", "--abbrev-ref", "HEAD"),
+    )
+        b = git(root, args...; ok=true)
+        b === nothing || isempty(b) || return String(last(split(b, '/')))
+    end
+    return "main"
+end
+
 # Written as one string with its indentation spelled out: a triple-quoted block would be dedented
 # to its own margin, and YAML is indentation.
 function _setup_steps(version)
@@ -128,11 +146,11 @@ $(_setup_steps(version))
 end
 
 """
-    setup_pages(root; version = this version, branch = "master", validate = true,
-                runner = "ubuntu-latest", site = nothing) -> Vector{String}
+    setup_pages(root; version = this version, branch = default_branch(root), validate = true,
+                runner = "ubuntu-latest", site = nothing) -> (; written, skipped)
 
-Write the workflows that publish `root` as a site and check it on every push, and return the paths
-written, relative to `root`. The Archeion version is pinned to the one writing them, which is what
+Write the workflows that publish `root` as a site and check it on every push. Returns the paths
+`written` and those `skipped`, relative to `root`. The Archeion version is pinned to the one writing them, which is what
 `registry.toml` should name.
 
 By default the site is **GitHub Pages**. A **private repository's Pages site is public** on every
@@ -143,14 +161,14 @@ workflow is not written at all.
 function setup_pages(
     root;
     version=_version(),
-    branch="master",
+    branch=default_branch(root),
     validate::Bool=true,
     runner="ubuntu-latest",
     site=nothing,
 )
     dir = joinpath(root, ".github", "workflows")
     mkpath(dir)
-    written = String[]
+    written, skipped = String[], String[]
     if site === nothing
         write(joinpath(dir, PAGES_WORKFLOW), _pages_yml(version, branch))
         push!(written, joinpath(".github", "workflows", PAGES_WORKFLOW))
@@ -161,8 +179,10 @@ function setup_pages(
     if validate
         write(joinpath(dir, VALIDATE_WORKFLOW), _validate_yml(version, runner))
         push!(written, joinpath(".github", "workflows", VALIDATE_WORKFLOW))
+    else
+        push!(skipped, joinpath(".github", "workflows", VALIDATE_WORKFLOW))
     end
-    return written
+    return (; written, skipped)
 end
 
 # The version a registry says it is read with, or nothing when it does not say.

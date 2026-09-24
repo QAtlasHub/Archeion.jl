@@ -9,7 +9,7 @@ implementation of it and depends on the standard library only.
 using Archeion
 
 Archeion.init("path/to/registry"; title = "The Registry")   # once: its directories and its config
-Archeion.validate("path/to/registry")          # (report, summary): errors, warnings, records
+Archeion.validate("path/to/registry")          # (; errors, warnings, summary)
 Archeion.build("path/to/registry")             # a static site in _site/, relative links only
 ```
 
@@ -87,7 +87,7 @@ copied script cannot silently continue another record:
 using Archeion, Pinax
 
 new_binding(".registry/bindings/phase.toml";      # once; commit the file it writes
-            registry = "../my-registry", slug = "phase-diagram",
+            root = "../my-registry", slug = "phase-diagram",
             project = "c0ffee00-1111-4222-8333-444444444444")   # the UUID in projects/<slug>.toml
 
 # ... build the document with @page / @section / @figure, then render both faces ...

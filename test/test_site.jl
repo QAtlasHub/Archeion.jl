@@ -61,11 +61,9 @@ end
 
 @testset "init: valid and wearing its banner from the first commit" begin
     root = mktempdir()
-    written = Archeion.init(
-        root; name="lab-registry", title="Lab", tagline="what we measured"
-    )
-    @test "registry.toml" in written && ".gitignore" in written
-    @test joinpath(".github", "workflows", "pages.yml") in written
+    r = Archeion.init(root; name="lab-registry", title="Lab", tagline="what we measured")
+    @test "registry.toml" in r.written && ".gitignore" in r.written
+    @test joinpath(".github", "workflows", "pages.yml") in r.written
 
     toml = TOML.parsefile(joinpath(root, "registry.toml"))
     @test toml["spec"] == "registry/2" && toml["name"] == "lab-registry"
