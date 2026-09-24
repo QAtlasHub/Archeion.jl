@@ -39,7 +39,7 @@ end
 """
     init(root; name = basename(root), title = name, tagline = "", pages = true, kw...) -> (; written, skipped)
 
-Start a registry at `root`: the directories a `registry/1` tree needs, `registry.toml` with its
+Start a registry at `root`: the directories a registry needs, `registry.toml` with its
 `[site]` banner, a `.gitignore` for what is derived, and — unless `pages = false` — the workflows
 that check it and publish its catalogue (`kw...` reaches [`setup_pages`](@ref): `branch`, `runner`,
 `site`). Returns the paths written, relative to `root`. Refuses a `root` that already holds a

@@ -14,7 +14,10 @@ const RESERVED = Set([
 ])   # R4
 const FORBIDDEN_KEYS = Set(["completed", "available", "missing", "done", "exists"])  # §8
 const EVENT_KINDS = Set(["comment", "yank", "supersede", "capability.verified"])     # §7
-const RECORD_KINDS = Set(["report", "note"])                                          # §4
+const RECORD_KINDS = Set(["report", "note"])
+# What a record is when nothing says: a binding or a record written before kinds existed (§4).
+# Named once, because a default transcribed at each call site is a default that drifts.
+const DEFAULT_KIND = "report"                                          # §4
 const PATH_TIME = dateformat"yyyymmdd\THHMMSS\Z"
 
 struct Report

@@ -14,8 +14,8 @@ package is one implementation of it, depending on the standard library only.
 - [`init`](@ref) starts a registry: its directories, its `registry.toml`, its workflows.
 - [`setup_pages`](@ref) writes the workflows that publish the catalogue as a site.
 
-From a shell: `julia -m Archeion validate [root]`, `julia -m Archeion build [root] [out]`,
-`julia -m Archeion pages [root] [--branch=B] [--runner=R] [--site=DIR]`.
+From a shell: `julia -m Archeion init [root]`, `validate [root]`, `build [root] [out]`,
+`pages [root] [--branch=B] [--runner=R] [--site=DIR]`, `reindex [root]`, `migrate [root]`.
 """
 module Archeion
 
@@ -116,8 +116,16 @@ end
 """
     main(args) -> exit code
 
-The command line: `validate [root]` prints the records and every warning and error, and returns 1
-when there is an error; `build [root] [out]` writes the site (by default to `<root>/_site`).
+The command line. `usage()` prints the same list; in short:
+
+- `init [root]` starts a registry — its directories, `registry.toml`, its workflows
+- `validate [root]` prints the records and every warning and error, and returns 1 on any error
+- `build [root] [out]` writes the site, by default to `<root>/_site`
+- `pages [root]` writes the workflows that publish it, pinned to this version
+- `reindex [root]` rewrites `registry.toml`'s index from the tree
+- `migrate [root]` converts a `registry/1` tree, and prints which identifier became which UUID
+
+Returns the process exit code: 0, 1 for a registry with errors, 2 for a usage problem.
 """
 function (@main)(args)
     isempty(args) && return usage()
