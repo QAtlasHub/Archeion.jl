@@ -34,7 +34,7 @@ same record. `root` is the registry, stored relative to the binding file's direc
 record holds — `"report"` for a rendered result, `"note"` for a lab note — and is fixed with the
 record, because a record answers one question in one way (§4).
 """
-function new_binding(path; root, project, slug, kind="report")
+function new_binding(path; root, project, slug, kind=DEFAULT_KIND)
     ispath(path) &&
         error("$path exists; a binding is created once. Use another path for a new record.")
     is_slug(slug) || error("slug must be lower-case words joined by `-` (R6)")
@@ -269,7 +269,7 @@ function deposit(
         error("$binding: `project` $(repr(get(b, "project", nothing))) is not a UUID (R5)")
     is_slug(get(b, "slug", nothing)) ||
         error("$binding: `slug` $(repr(get(b, "slug", nothing))) is not a slug (R6)")
-    get(b, "kind", "report") in RECORD_KINDS || error(
+    get(b, "kind", DEFAULT_KIND) in RECORD_KINDS || error(
         "$binding: `kind` $(repr(b["kind"])) is not one of $(join(RECORD_KINDS, ", "))"
     )
     reg = registry_of(binding)
@@ -284,11 +284,11 @@ function deposit(
     frozen = utcnow()
     new_record = recdir === nothing
     # What the record holds is the record's, not the revision's: an existing record keeps the kind
-    # it was created with, and a binding written before kinds existed means "report".
+    # it was created with, and a binding written before kinds existed means DEFAULT_KIND.
     kind = if new_record
-        get(b, "kind", "report")
+        get(b, "kind", DEFAULT_KIND)
     else
-        get(TOML.parsefile(joinpath(recdir, "record.toml")), "kind", "report")
+        get(TOML.parsefile(joinpath(recdir, "record.toml")), "kind", DEFAULT_KIND)
     end
     # The binding's `slug` names a record only when there is not one yet. Afterwards the record's
     # own directory is the name, and it may be renamed without touching the binding (R6): the two
@@ -415,7 +415,13 @@ end
 Split anchor ids into those that keep their meaning across revisions and those Pinax numbered by
 position (`<section>_fig<N>`, `<section>_tbl<N>`), which point elsewhere once a figure is inserted.
 """
-function anchors(ids; auto=r"_(fig|tbl)\d+$")
+# The numbering Pinax gives a figure or table with no explicit id. Named here because it is a
+# renderer's convention rather than a fact about registries, and kept as the default because a
+# document written by hand follows it too — but the Pinax extension passes it explicitly, so a
+# change to Pinax's numbering is a change beside Pinax and not a silent misreading here.
+const AUTO_NUMBERED = r"_(fig|tbl)\d+$"
+
+function anchors(ids; auto=AUTO_NUMBERED)
     ids = unique(string.(ids))
     return (;
         stable=filter(i -> !occursin(auto, i), ids),

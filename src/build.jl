@@ -263,7 +263,7 @@ end
 # said about it in comments. A search that only sees card titles finds what you already see.
 function searchable(rec, proj)
     e = shown(rec).entry
-    parts = [proj, rec.record["uuid"], get(rec.record, "kind", "report")]
+    parts = [proj, rec.record["uuid"], get(rec.record, "kind", DEFAULT_KIND)]
     for r in rec.revs
         push!(parts, r.entry["doc"]["title"], r.name)
         for k in ("question", "claim")
@@ -554,10 +554,10 @@ end
 
 # A record says what it holds; only a kind other than the default is worth a word on the page.
 function kind_note(record)
-    return if get(record, "kind", "report") == "report"
+    return if get(record, "kind", DEFAULT_KIND) == "report"
         ""
     else
-        " · " * html_escape(string(get(record, "kind", "report")))
+        " · " * html_escape(string(get(record, "kind", DEFAULT_KIND)))
     end
 end
 
@@ -679,8 +679,21 @@ function copy_revision(src, dest)
     return darken_site_copy!(dest)
 end
 
-function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
-    site = site_config(root, name)
+"""
+    build(root, out = joinpath(root, "_site")) -> (; out, records, bytes, dark)
+
+Render the registry at `root` as a static site in `out`, and say what was written: how many
+`records`, how many `bytes`, and `dark`, the tally of stylesheets that got a dark layer
+(`dark`, `already`, `colourless`, `unknown` — `unknown` is the count that is not supposed to be
+above zero, and each one is warned about by name).
+
+The site is **derived**: `out` is replaced on every build, never committed, and every link in it is
+relative, so it reads from a sub-path, over SSH or from `file://`. Refuses a registry that does not
+validate, and refuses to replace an `out` it did not write. A revision is copied in as it is frozen;
+only the copy is ever touched (see `dark.jl`).
+"""
+function build(root, out=joinpath(root, "_site"))
+    site = site_config(root, basename(abspath(root)))
     r = validate(root)
     isempty(r.errors) || error(
         "the registry does not validate; run tools/validate.jl:\n  " *

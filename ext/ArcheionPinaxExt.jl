@@ -25,7 +25,11 @@ function Archeion.doc_fields(
     doc::Pinax.Document; tags=String[], question=nothing, claim=nothing
 )
     status = all(pg.status === :final for pg in doc.pages) ? "final" : "trial"
-    fields = (; title=doc.meta.title, status, Archeion.anchors(anchor_ids(doc))...)
+    fields = (;
+        title=doc.meta.title,
+        status,
+        Archeion.anchors(anchor_ids(doc); auto=Archeion.AUTO_NUMBERED)...,
+    )
     isempty(tags) || (fields = merge(fields, (; tags=collect(String, tags))))
     question === nothing || (fields = merge(fields, (; question=String(question))))
     claim === nothing || (fields = merge(fields, (; claim=String(claim))))
