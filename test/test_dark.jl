@@ -167,6 +167,23 @@ end
     @test contrast(D["line"], D["bg"]) >= 1.5              # a line, not a letter
 end
 
+@testset "dark: the control can be found as well as read" begin
+    # The colour-scheme button is the one thing on the page that is not text, and the rule for
+    # those is different: WCAG 1.4.11 asks 3:1 of the boundary that says a control is there. Its
+    # fill cannot do that job — `--card` on `--bg` is 1.04:1 in light and 1.09:1 in dark, which is
+    # why the border carries it. Measured in both palettes, because a control visible in one and
+    # not the other is a control half of the readers never find.
+    LIGHT = Dict("bg" => "#fafafa", "card" => "#fff", "mut" => "#57606a", "fg" => "#24292f")
+    for P in (LIGHT, Archeion.DARK)
+        @test contrast(P["mut"], P["bg"]) >= 3.0           # the border, against the page
+        @test contrast(P["mut"], P["card"]) >= 4.5         # the label, on its own fill
+        @test contrast(P["fg"], P["card"]) >= 4.5          # and on hover
+    end
+    # …and nothing in the rule dims it back down again: `opacity` composites the button toward the
+    # page and took the label to 3.62 in light and 3.88 in dark when it was there.
+    @test !occursin("opacity", Archeion.APPEARANCE_CSS)
+end
+
 @testset "dark: every colour the frozen reports use has a role, and every role an answer" begin
     for hex in keys(Archeion.ROLE)
         @test Archeion.dark_of(hex) !== nothing

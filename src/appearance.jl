@@ -63,11 +63,19 @@ end
 # The control's own styling, in the site's palette. A frozen report has no rule for a button that
 # did not exist when it was rendered, so the styling travels with the control; the fallbacks are
 # for a report whose palette is not tokenised.
+#
+# Measured, and it changed the design twice. The pill's fill is `--card` on a `--bg` page, which is
+# 1.04:1 in light and 1.09:1 in dark — invisible, so the *border* is what says a button is there
+# and it has to carry the 3:1 a boundary needs. `--line` gives 1.21 and 1.55; `--faint` gives 2.95,
+# which misses in light; `--mut` gives 6.12 and 6.50. And the `opacity:.75` this started with is
+# not free: composited, it took the label from 6.39/5.94 down to 3.62/3.88, under the 4.5 text
+# wants. The quiet belongs in the colour — which is what `--mut` is for — not in a transparency
+# that dims the measurement along with the button.
 const APPEARANCE_CSS = """
 .pinax-appearance{position:fixed;top:.55rem;right:.55rem;z-index:99;font:600 12px/1 system-ui,sans-serif;
-color:var(--mut,#57606a);background:var(--card,#fff);border:1px solid var(--line,#e2e5e9);
-border-radius:999px;padding:.42rem .72rem;cursor:pointer;opacity:.75}
-.pinax-appearance:hover,.pinax-appearance:focus-visible{opacity:1}
+color:var(--mut,#57606a);background:var(--card,#fff);border:1px solid var(--mut,#57606a);
+border-radius:999px;padding:.42rem .72rem;cursor:pointer}
+.pinax-appearance:hover,.pinax-appearance:focus-visible{color:var(--fg,#24292f);border-color:var(--fg,#24292f)}
 @media print{.pinax-appearance{display:none}}"""
 
 # ── injecting the control into a copy of a frozen report ──────────────────────────────────────
