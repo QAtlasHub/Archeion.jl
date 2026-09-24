@@ -39,7 +39,17 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         edit_link="main",
     ),
-    pages=["Archeion" => "index.md", "The format" => "spec.md", "API" => "api.md"],
+    pages=[
+        "Archeion" => "index.md",
+        "How to use" => [
+            "Create a registry" => "guide/registry.md",
+            "Publish a result" => "guide/publish.md",
+            "Correct or withdraw" => "guide/correct.md",
+            "Everything else" => "guide/everything-else.md",
+        ],
+        "The format" => "spec.md",
+        "API" => "api.md",
+    ],
     checkdocs=:none,   # the internals carry docstrings too; the API page lists what is public
 )
 

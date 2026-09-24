@@ -49,101 +49,20 @@ registries can use the same slug for different things.
 The exact rules are in [the format](@ref The-format). You do not need them to use this — they are
 there so that somebody who finds your registry in ten years does not need this package either.
 
-## Getting started
+## How to use it
 
-### If you are starting a new registry
+The step-by-step is its own section, in the order you meet it:
 
-```julia
-using Archeion
-Archeion.init("path/to/registry"; title = "The Registry")
-```
+| | |
+|---|---|
+| [Create a registry](@ref Create-a-registry) | the tree, a project, and the CI that keeps it honest |
+| [Publish a result](@ref Publish-a-result) | bind a record once, then deposit a revision each time |
+| [Correct or withdraw](@ref Correct-or-withdraw-a-result) | what to do when an answer was wrong — revisions are never edited |
+| [Everything else](@ref Everything-else) | the command line, shared registries, migration, provenance |
 
-That writes the directories and `registry.toml`, where `[site]` is what a reader meets first — the
-banner's title, its tagline, its links, and the colour scheme they get before choosing one. Edit
-it now rather than later; it is the only part of a registry that is about you.
-
-Then add a project — a line of work that records belong to. Projects are written by hand on
-purpose: naming one is a decision, not a side effect. `projects/<slug>.toml` wants four fields:
-
-```toml
-spec = "registry/2"
-uuid = "247b870f-4313-4ae6-aa32-5d309fe806e1"   # julia -e 'using UUIDs; println(uuid4())'
-name = "Chaotic attractors"
-created = 2026-09-24T12:40:00Z
-```
-
-Run [`validate`](@ref) whenever you are unsure. It names everything that is wrong at once, and
-when the index has fallen behind the tree it says which command fixes it.
-
-### If you already have a `registry/1` registry
-
-```julia
-Archeion.migrate!("path/to/registry")
-```
-
-Commit everything first. The conversion is all-or-nothing: it either finishes and validates, or
-it puts your tree back exactly as it was — and "putting it back" is git's job, which is why it
-needs a clean working tree to start from. A registry that is not under git is told it has no undo
-rather than being left half converted.
-
-Nothing else is supported, and `validate` says so by name rather than guessing.
-
-## Publishing a result
-
-Two steps, and the first happens only once per record.
-
-**Once — give the record a name.**
-
-```julia
-Archeion.new_binding(".registry/bindings/henon.toml";
-                     root = "path/to/registry",
-                     project = "247b870f-…",
-                     slug = "henon-correlation-dimension")
-```
-
-The binding lives in the repository that *renders* the report, not in the registry, and it is the
-one file that says which record your script writes to. Commit it. You will not touch it again.
-
-!!! warning "The slug is not checked for collisions here"
-    A name already used by another record of the same year is accepted by `new_binding` and
-    refused at your first [`deposit`](@ref). The refusal is clear and your registry is left
-    untouched, but you are left with a committed binding that points at nothing: delete it and
-    make another. (It cannot be checked earlier — a record is filed under the year it is *frozen*,
-    which is not known yet.)
-
-**Every time — deposit the answer.**
-
-```julia
-deposit(BINDING;
-        gallery = …, agent = …,                    # the two faces Pinax rendered
-        source_repo = @__DIR__,
-        doc = Archeion.doc_fields(Pinax.current_document()))
-```
-
-The first revision and the tenth are the same call. `deposit` works out for itself whether it is
-creating the record or adding to it, and links the new revision to the one before. If anything
-goes wrong it leaves the registry as it found it — there is no half-deposited state to clean up.
-
-Both calls have a worked example in the demonstration repository:
-[`scripts/build.jl`](https://github.com/QAtlasHub/archeion-demo/blob/master/scripts/build.jl)
-renders with Pinax and deposits, and
-[`scripts/lorenz.jl`](https://github.com/QAtlasHub/archeion-demo/blob/master/scripts/lorenz.jl)
-goes through [`publish`](@ref) from a DataVault vault — which is the same path with both ends
-attached: it syncs the registry, checks your rendering commit is pushed, renders, deposits, and
-opens a pull request.
-
-## Publishing the catalogue
-
-```julia
-Archeion.build("path/to/registry")   # -> _site/
-```
-
-`_site` is rebuilt from scratch every time and never committed. Because it is a copy, it can carry
-things the frozen revisions cannot: a report you published before this package had a dark mode
-gets one in the site's copy, while the revision itself stays byte-identical under its checksums.
-
-[`setup_pages`](@ref) writes the GitHub Actions workflows that validate on every pull request and
-publish the site on every push.
+In short: [`init`](@ref) once for the registry, [`new_binding`](@ref) once per record, and
+[`deposit`](@ref) every time you have a new answer. The first revision and the tenth are the same
+call.
 
 ## Reading a registry without any of this
 
