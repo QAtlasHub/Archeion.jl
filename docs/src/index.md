@@ -12,6 +12,19 @@ that expires when the service does. Here a registry is a directory tree; a reade
 browser can follow it, and Archeion.jl is a convenience for *writing* one — not a precondition for
 reading one.
 
+!!! tip "There is one you can open right now"
+    [**archeion-demo**](https://qatlashub.github.io/archeion-demo/) is a real registry, built by
+    this package on every push. Two records, several revisions each, and every link on it
+    relative. The page you land on is the catalogue; the
+    [logistic map record](https://qatlashub.github.io/archeion-demo/records/2026/logistic-map/)
+    shows what a record looks like once it has a history, and
+    [its current revision](https://qatlashub.github.io/archeion-demo/records/2026/logistic-map/revisions/20260922T060556Z-t8c9/gallery/)
+    is a frozen answer.
+
+    The tree behind it is at
+    [QAtlasHub/archeion-demo](https://github.com/QAtlasHub/archeion-demo) — worth a look in the
+    other order: read the files first, then the site they produce.
+
 ```julia
 using Archeion
 
@@ -136,6 +149,13 @@ move it into place, reindex, validate again, commit. A failure before the move d
 staging directory; a failure after it removes the revision and rewrites the index. The registry is
 never left half-written.
 
+Both calls have a worked example in the demo registry:
+[`scripts/build.jl`](https://github.com/QAtlasHub/archeion-demo/blob/master/scripts/build.jl)
+renders with Pinax and calls `deposit` directly, and
+[`scripts/lorenz.jl`](https://github.com/QAtlasHub/archeion-demo/blob/master/scripts/lorenz.jl)
+goes through `publish` from a DataVault vault. Their bindings are committed beside them, under
+[`.registry/bindings/`](https://github.com/QAtlasHub/archeion-demo/tree/master/.registry/bindings).
+
 [`publish`](@ref) is the same thing with both ends attached, available when Pinax and DataVault
 are loaded: it syncs the registry to its remote, warns if the rendering commit is not published
 yet, renders both faces, deposits, then pushes a branch or opens a pull request.
@@ -158,4 +178,7 @@ Each record's `record.toml` says what it is; each revision holds `README.md`, `e
 `SHA256SUMS` and the rendered report. `sha256sum -c SHA256SUMS` checks a revision on any machine
 with coreutils.
 
-That is the promise the rest of this exists to keep.
+That is the promise the rest of this exists to keep, and
+[the demo's tree on GitHub](https://github.com/QAtlasHub/archeion-demo/tree/master/records/2026/logistic-map)
+is the shortest way to check that it is kept: `record.toml`, then `revisions/`, then one
+revision's `SHA256SUMS`. Nothing there needs this package to make sense.

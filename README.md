@@ -18,6 +18,11 @@ implementation of it and depends on the standard library only.
 **What it is, which registries it supports, and how to deploy a result into one** are one page in
 the [documentation](https://qatlashub.github.io/Archeion.jl/dev/).
 
+There is a registry you can open right now:
+[**archeion-demo**](https://qatlashub.github.io/archeion-demo/) is built by this package on every
+push, and [its tree](https://github.com/QAtlasHub/archeion-demo) is worth reading in the other
+order — the files first, then the site they produce.
+
 ```julia
 using Archeion
 
