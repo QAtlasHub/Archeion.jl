@@ -256,6 +256,23 @@ const DARK_SHEET_HEAD = """
    reader's choice reaches these rules. */
 """
 
+# The one rule this adds rather than recolours. A figure carries its own white inside the SVG,
+# where no stylesheet reaches it — and it should: the axes and labels are dark ink, and taking the
+# paper away would leave them unreadable on a dark page. So the page turns the lamp down instead.
+# `brightness(.85)` makes the paper #d9d9d9, which still reads as paper and stops being a lamp.
+#
+# Measured at that value: inside the figure, ink/paper 14.9, axis/paper 7.2, a plotted line 4.4 —
+# all still clear, a line being a graphical object that wants 3. Against the card it sits on, 12.3.
+#
+# It rides in this file rather than in the injected `<style>` because this file is already gated by
+# the `media` the control rewrites, so it applies exactly when dark does and needs no guard of its
+# own. Pinax says the same thing in its own stylesheet, for reports rendered from 0.1.8 on; this is
+# for every report frozen before that, which is all of them.
+const DARK_SHEET_TAIL = """
+
+figure img, .card-thumb img, iframe.pinax-pdf, .card-thumb-pdf{filter:brightness(.85)}
+"""
+
 # A page's own stylesheets, as it spells them. A sheet somewhere else — a CDN, a site-absolute
 # path — is not ours to darken and not ours to resolve.
 function linked_stylesheets(html)
@@ -293,7 +310,7 @@ function darken_site_copy!(dir, appearance="system")
         path = joinpath(d, f)
         r = darkened(read(path, String))
         if r.why === :ok
-            write(dark_sheet_of(path), DARK_SHEET_HEAD * r.layer)
+            write(dark_sheet_of(path), DARK_SHEET_HEAD * r.layer * DARK_SHEET_TAIL)
             push!(converted, rel)
             dark += 1
         elseif r.why === :already

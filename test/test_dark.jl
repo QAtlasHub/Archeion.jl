@@ -85,6 +85,9 @@ end
             @test read(copied, String) == before[r]
             layer = read(joinpath(gallery, "style.dark.css"), String)
             @test occursin("#0d1117", layer) && !occursin("#fafafa", layer)
+            # the one rule the layer adds rather than recolours: a figure keeps its own white,
+            # inside the SVG where nothing can reach it, so the page turns the lamp down instead
+            @test occursin("filter:brightness(.85)", layer)
             # …which the page links, gated by a media the control can rewrite
             html = read(joinpath(gallery, "index.html"), String)
             @test occursin(
