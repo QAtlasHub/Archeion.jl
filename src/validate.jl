@@ -138,6 +138,14 @@ end
 # reader that errored on one would make a registry invalid by looking at it wrong.
 entries(dir) = sort(filter(n -> !startswith(n, "."), readdir(dir)))
 
+# Does `path` stay under `dir`? Asked of every path that comes out of a file rather than out of a
+# directory walk: `joinpath` hands an absolute path straight through and `..` walks out, so a
+# containment check is the only thing between a listed name and the rest of the disk.
+function inside(dir, path)
+    root = rstrip(abspath(dir), '/') * "/"
+    return startswith(abspath(normpath(path)), root)
+end
+
 function check_projects(r::Report)
     ids = Set{String}()
     base = joinpath(r.root, "projects")
@@ -209,7 +217,19 @@ function check_sums(r::Report, revdir)
         file = String(m[2])
         file in listed && err!(r, sums, "`$file` is listed twice")
         push!(listed, file)
+        # The path comes out of a file the validator is here to distrust. `joinpath` lets an
+        # absolute one win outright and `..` walk out, so a line naming `/etc/passwd` would be
+        # hashed, found, and counted as covered — §5.2 says SHA256SUMS lists the files *of the
+        # revision*, and that is only true if it cannot name anything else.
         full = joinpath(revdir, file)
+        if !inside(revdir, full)
+            err!(
+                r,
+                sums,
+                "`$file` leaves the revision; SHA256SUMS lists its own files (§5.2)",
+            )
+            continue
+        end
         if !isfile(full)
             err!(r, sums, "`$file` is listed but does not exist")
         elseif bytes2hex(open(sha256, full)) != m[1]

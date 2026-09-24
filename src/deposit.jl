@@ -61,6 +61,34 @@ function new_binding(path; registry, project, slug, kind="report")
     return id
 end
 
+# What the registry itself holds, uncommitted. Not the whole working tree: `_site/`, a binding
+# under `.registry/`, a scratch file beside them are none of a deposit's business.
+const REGISTRY_CONTENT = ("records", "projects", INDEX_FILE)
+
+"""
+    check_settled(reg)
+
+Refuse to deposit into a registry whose own content is not committed. A deposit reads the tree to
+decide what it is adding to — the current revision it will name as parent, the index it will
+rewrite — so anything on disk that git does not have is something the next revision may cite and
+nobody else will ever see.
+
+That is not hypothetical: a deposit interrupted between writing a revision and committing it leaves
+exactly that, the tree still validates, and the *next* deposit names the orphan as its parent and
+commits **that**. One `git clean` later the registry holds a committed revision whose parent
+resolves nowhere, and the parent's bytes are gone — not even as an unreferenced object.
+"""
+function check_settled(reg)
+    git(reg, "rev-parse", "--git-dir"; ok=true) === nothing && return nothing
+    dirty = git(reg, "status", "--porcelain", "--", REGISTRY_CONTENT...; ok=true)
+    (dirty === nothing || isempty(dirty)) && return nothing
+    return error(
+        "$reg has uncommitted changes of its own; commit them before depositing, so that what " *
+        "the next revision is built on is what everyone else will see:\n  " *
+        replace(dirty, "\n" => "\n  "),
+    )
+end
+
 "The registry a binding names, as an absolute path: the binding stores it relative to itself."
 function registry_of(binding)
     return normpath(
@@ -244,6 +272,7 @@ function deposit(
     )
     reg = registry_of(binding)
     id = b["record"]
+    check_settled(reg)
     r0, _ = validate(reg)
     isempty(r0.errors) || error(
         "the registry does not validate before depositing:\n  " * join(r0.errors, "\n  "),

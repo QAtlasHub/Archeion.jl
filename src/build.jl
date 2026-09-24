@@ -31,7 +31,11 @@ function read_registry(root)
     end
     records = []
     base = joinpath(root, "records")
-    for year in entries(base), rec in entries(joinpath(base, year))
+    # A registry with nothing in it yet is a registry — `validate` says so, and `init` makes one.
+    # Reading the tree has to agree with checking it, or `build` crashes on what it was told is fine.
+    for year in (isdir(base) ? entries(base) : String[]),
+        rec in entries(joinpath(base, year))
+
         dir = joinpath(base, year, rec)
         record = TOML.parsefile(joinpath(dir, "record.toml"))
         revs = [
@@ -643,7 +647,14 @@ function broken_links(out)
             )
             target = normpath(joinpath(dir, first(split(link, r"[?#]"))))
             isdir(target) && (target = joinpath(target, "index.html"))
-            ispath(target) || push!(bad, "$(relpath(path, out)): $link does not exist")
+            # `ispath` asks the machine building the site, not the site. A link with enough `../`
+            # resolves to something that exists here and nowhere a reader will ever be, so it has
+            # to be confined to the output before it is asked whether it exists at all.
+            if !inside(out, target)
+                push!(bad, "$(relpath(path, out)): $link leaves the site")
+            elseif !ispath(target)
+                push!(bad, "$(relpath(path, out)): $link does not exist")
+            end
         end
     end
     return bad
