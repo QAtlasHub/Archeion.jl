@@ -295,7 +295,7 @@ end
     store = synthetic_store(; binding="launched-from-snapshot")
     deposited([point("k1", store.token)]; store) do root, res
         @test !(res isa Exception)
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test isempty(r.errors)                                    # read, not refused
         @test mentions(r.warnings, "not one this version knows")   # and said so
         @test mentions(r.warnings, "read as `unverified`")
