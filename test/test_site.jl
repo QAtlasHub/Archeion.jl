@@ -61,11 +61,9 @@ end
 
 @testset "init: valid and wearing its banner from the first commit" begin
     root = mktempdir()
-    written = Archeion.init(
-        root; name="lab-registry", title="Lab", tagline="what we measured"
-    )
-    @test "registry.toml" in written && ".gitignore" in written
-    @test joinpath(".github", "workflows", "pages.yml") in written
+    r = Archeion.init(root; name="lab-registry", title="Lab", tagline="what we measured")
+    @test "registry.toml" in r.written && ".gitignore" in r.written
+    @test joinpath(".github", "workflows", "pages.yml") in r.written
 
     toml = TOML.parsefile(joinpath(root, "registry.toml"))
     @test toml["spec"] == "registry/2" && toml["name"] == "lab-registry"
@@ -73,8 +71,8 @@ end
     @test toml["site"]["title"] == "Lab" && toml["site"]["tagline"] == "what we measured"
     @test occursin("_site/", read(joinpath(root, ".gitignore"), String))
 
-    r, summary = Archeion.validate(root)                       # empty, and valid
-    @test isempty(r.errors) && isempty(summary)
+    r = Archeion.validate(root)                                # empty, and valid
+    @test isempty(r.errors) && isempty(r.summary)
     @test Archeion.build(root).records == 0                    # and it builds
     @test occursin(">Lab</a>", read(joinpath(root, "_site", "index.html"), String))
 
@@ -87,7 +85,7 @@ end
     root = mktempdir()
     Archeion.init(root; pages=false)
     write(joinpath(root, "records", ".DS_Store"), "")          # the classic
-    r, _ = Archeion.validate(root)
+    r = Archeion.validate(root)
     @test isempty(r.errors)
     @test Archeion.build(root).records == 0
     rm(root; recursive=true)
@@ -104,7 +102,7 @@ end
     toml = TOML.parsefile(joinpath(root, "registry.toml"))
     @test toml["name"] == "lab-notes"             # named after the directory unless told otherwise
     @test toml["site"]["title"] == "Lab Notes" && toml["site"]["tagline"] == "as we go"
-    @test isempty(first(Archeion.validate(root)).errors)
+    @test isempty(Archeion.validate(root).errors)
 
     said = sprint() do io
         Archeion.init_instructions(io, root, ["registry.toml"], "lab-notes")

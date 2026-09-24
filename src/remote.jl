@@ -98,7 +98,7 @@ function rebase_onto_remote!(reg)
     withenv("GIT_EDITOR" => "true") do
         return git(reg, "rebase", "--continue")
     end
-    r, _ = validate(reg)
+    r = validate(reg)
     isempty(r.errors) || error(
         "after rebasing onto the remote the registry does not validate:\n  " *
         join(r.errors, "\n  "),

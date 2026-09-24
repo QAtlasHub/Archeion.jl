@@ -681,7 +681,7 @@ end
 
 function build(root, out=joinpath(root, "_site"); name=basename(abspath(root)))
     site = site_config(root, name)
-    r, _ = validate(root)
+    r = validate(root)
     isempty(r.errors) || error(
         "the registry does not validate; run tools/validate.jl:\n  " *
         join(r.errors, "\n  "),

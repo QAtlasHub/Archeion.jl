@@ -86,7 +86,7 @@ end
             r in (rev, second)
         )
         before = Dict(r => read(s, String) for (r, s) in sheets)
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
 
         res = Archeion.build(root)
         @test res.dark.dark == 2 && res.dark.unknown == 0
@@ -101,7 +101,7 @@ end
             @test read(sheet, String) == before[r]
             @test sums_verify(r)
         end
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
     end
 end
 

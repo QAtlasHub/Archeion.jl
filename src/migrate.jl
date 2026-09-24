@@ -104,13 +104,15 @@ function migrate!(root)
         records = plan.untitled
     )
     projects, records = length(plan.projects), length(plan.records)
-    r, summary = validate(root)
+    r = validate(root)
     isempty(r.errors) ||
         error("the converted registry does not validate:\n  " * join(r.errors, "\n  "))
     # `ids` is the conversion's one unrecoverable-by-guessing output: a binding lives in the
     # repository that renders the report, not in the registry, so nothing here can update it, and
     # whoever runs this needs to know which UUID replaced which identifier to do it themselves.
-    return (; projects, records, summary, ids=plan.ids, untitled=plan.untitled, at)
+    return (;
+        projects, records, summary=r.summary, ids=plan.ids, untitled=plan.untitled, at
+    )
 end
 
 # What the conversion will do, and every reason it cannot. Nothing here writes: a registry that

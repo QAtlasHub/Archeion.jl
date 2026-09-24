@@ -26,22 +26,22 @@ end
 # ── binding ───────────────────────────────────────────────────────────────────────────────────
 
 """
-    new_binding(path; registry, project, slug, kind = "report") -> record id
+    new_binding(path; root, project, slug, kind = "report") -> (; record)
 
 Choose a new record identifier and write the binding file at `path`. Refuses if `path` exists: a
 binding is created once and committed, and every later `deposit` through it adds a revision to the
-same record. `registry` is stored relative to the binding file's directory. `kind` is what the
+same record. `root` is the registry, stored relative to the binding file's directory. `kind` is what the
 record holds — `"report"` for a rendered result, `"note"` for a lab note — and is fixed with the
 record, because a record answers one question in one way (§4).
 """
-function new_binding(path; registry, project, slug, kind="report")
+function new_binding(path; root, project, slug, kind="report")
     ispath(path) &&
         error("$path exists; a binding is created once. Use another path for a new record.")
     is_slug(slug) || error("slug must be lower-case words joined by `-` (R6)")
     is_uuid(project) || error("$project is not a UUID (R5)")
     kind in RECORD_KINDS || error("kind must be one of $(sort(collect(RECORD_KINDS)))")
-    haskey(first(scan(registry)), project) ||
-        error("project $project is not in $(joinpath(registry, "projects"))")
+    haskey(first(scan(root)), project) ||
+        error("project $project is not in $(joinpath(root, "projects"))")
     id = new_uuid()
     mkpath(dirname(abspath(path)))
     open(path, "w") do io
@@ -49,7 +49,7 @@ function new_binding(path; registry, project, slug, kind="report")
             io,
             Dict(
                 "spec" => SPEC,
-                "registry" => relpath(abspath(registry), dirname(abspath(path))),
+                "registry" => relpath(abspath(root), dirname(abspath(path))),
                 "project" => project,
                 "record" => id,
                 "slug" => slug,
@@ -58,7 +58,9 @@ function new_binding(path; registry, project, slug, kind="report")
             sorted=true,
         )
     end
-    return id
+    # A NamedTuple, and `record` is what `deposit` calls the same value: one vocabulary for the
+    # two calls that make a record, and room to say more later without breaking a caller.
+    return (; record=id)
 end
 
 # What the registry itself holds, uncommitted. Not the whole working tree: `_site/`, a binding
@@ -273,7 +275,7 @@ function deposit(
     reg = registry_of(binding)
     id = b["record"]
     check_settled(reg)
-    r0, _ = validate(reg)
+    r0 = validate(reg)
     isempty(r0.errors) || error(
         "the registry does not validate before depositing:\n  " * join(r0.errors, "\n  "),
     )
@@ -374,7 +376,7 @@ function deposit(
     )
     mv(incoming, final)
     reindex!(reg)                                     # the index follows the tree (§2.1)
-    r, _ = validate(reg)
+    r = validate(reg)
     if !isempty(r.errors)
         rm(final; recursive=true)
         new_record && rm(recdir; recursive=true)

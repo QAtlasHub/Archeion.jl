@@ -73,7 +73,7 @@ function broken(mutate!, reads=[point("k1", OBS)])
     deposited(reads) do root, res
         mutate!(res.dir)
         Archeion.write_sums(res.dir)
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         return (; errors=r.errors, warnings=r.warnings)
     end
 end
@@ -84,7 +84,7 @@ rewrite!(path, f) = write(path, f(read(path, String)))
     t = store.token
     reads = [point("k2", t), point("k1", t), point("k3", "unknown"; result="unknown")]
     deposited(reads; store) do root, res
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test isempty(r.errors) && isempty(r.warnings)
         p = TOML.parsefile(joinpath(res.dir, "provenance.toml"))
         @test p["schema"] == "registry.provenance/1" && p["points"] == 3
@@ -123,7 +123,7 @@ end
 @testset "provenance: without contents, only the inventory is kept" begin
     store = synthetic_store()
     deposited([point("k1", store.token)]; store, source_contents=false) do root, res
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
         @test !isdir(joinpath(res.dir, "repro", "blobs"))
         @test TOML.parsefile(joinpath(res.dir, "provenance.toml"))["source_contents"] ==
             false
@@ -139,7 +139,7 @@ end
         @test commits(root) == 1 && (!isdir(incoming) || isempty(readdir(incoming)))
     end
     deposited(reads; allow_mismatch=true) do root, res
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test isempty(r.errors)
         @test mentions(r.warnings, "1 point(s) read bytes that differ") &&
             mentions(r.warnings, "allow_mismatch")
@@ -149,7 +149,7 @@ end
 @testset "provenance: an observation the store does not have is listed, not dropped" begin
     other = "obs1-20260922T000001Z-1a2b-fedcba9876543210"
     deposited([point("k1", other)]) do root, res
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test isempty(r.errors) && mentions(r.warnings, "$other was not available")
         p = TOML.parsefile(joinpath(res.dir, "provenance.toml"))
         @test p["missing_observations"] == [other] && p["bindings"] == Dict("unknown" => 1)
@@ -159,7 +159,7 @@ end
 @testset "provenance: a match is not taken at its word" begin
     store = synthetic_store(; binding="loaded-matches-disk")
     deposited([point("k1", store.token)]; store) do root, res
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test isempty(r.errors)
         @test mentions(r.warnings, "it is counted as `unverified`")
         p = TOML.parsefile(joinpath(res.dir, "provenance.toml"))
@@ -167,7 +167,7 @@ end
     end
     store = synthetic_store(; binding="loaded-differs-from-disk")
     deposited([point("k1", store.token)]; store) do root, res
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test isempty(r.warnings)
         @test TOML.parsefile(joinpath(res.dir, "provenance.toml"))["bindings"] ==
             Dict("loaded-differs-from-disk" => 1)
@@ -276,7 +276,7 @@ end
             res = deposit(
                 binding; src..., doc=DOC, source_repo=root, push=false, provenance=prov
             )
-            r, _ = Archeion.validate(root)
+            r = Archeion.validate(root)
             @test isempty(r.errors)
             p = TOML.parsefile(joinpath(res.dir, "provenance.toml"))
             @test p["points"] == 2 && p["counts"]["read_matches_result"] == 2
@@ -295,7 +295,7 @@ end
     store = synthetic_store(; binding="launched-from-snapshot")
     deposited([point("k1", store.token)]; store) do root, res
         @test !(res isa Exception)
-        r, _ = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test isempty(r.errors)                                    # read, not refused
         @test mentions(r.warnings, "not one this version knows")   # and said so
         @test mentions(r.warnings, "read as `unverified`")

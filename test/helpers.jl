@@ -48,8 +48,7 @@ end
 function validated(mutate!)
     with_fixture() do root, rec, rev
         mutate!(root, rec, rev)
-        r, summary = Archeion.validate(root)
-        return (; errors=r.errors, warnings=r.warnings, summary)
+        return Archeion.validate(root)
     end
 end
 # Does the revision in `dir` still check out against the SHA256SUMS beside it?
