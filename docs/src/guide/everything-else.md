@@ -64,8 +64,10 @@ That is a warning rather than a refusal: there are legitimate reasons to deposit
 same time both write `registry.toml`, so they conflict there and nowhere else; this puts yours on
 top of what arrived meanwhile and regenerates the index instead of asking you to merge it.
 
-[`publish`](@ref) calls all three for you. You need them by name only when driving `deposit`
-directly.
+[`publish`](@ref) calls the first two every time. The third is reached only on the `remote = :push`
+path, and only when the first push is rejected because the remote moved — on the default `:pr` path
+the commit goes to a fresh branch and nothing is ever rebased. You need any of them by name only
+when driving `deposit` directly.
 
 ## Converting an old registry
 
@@ -73,9 +75,13 @@ directly.
 Archeion.migrate!("path/to/registry")   # -> (; projects, records, summary, ids, at)
 ```
 
-For `registry/1` trees. Commit first: the conversion is all-or-nothing, and the way it puts your
-tree back is git's, so it needs a clean working tree to start from. A tree not under git is told
-it has no undo rather than being left half converted.
+For `registry/1` trees. Commit first: the conversion is all-or-nothing *when it can be*, and the
+way it puts your tree back is git's, so it needs a clean working tree to start from.
+
+A tree not under git has no undo, and the failure mode is worth knowing before you meet it: the
+conversion runs to the end, and if the converted tree does not validate it is **left as it is** —
+part `registry/1` and part `registry/2`, to be repaired by hand. The error says so rather than
+leaving you to find out.
 
 `ids` is the part you cannot reconstruct afterwards — which old identifier became which UUID.
 Bindings live in *other* repositories, so nothing here can update them for you, and you need that
@@ -104,7 +110,8 @@ appearance = "dark"       # "system" (default) | "light" | "dark"
 
 A reader's own choice is remembered in their browser and outranks it. Reports frozen before any of
 this existed get a dark layer and the control in the *site's copy* — the revision itself is never
-touched.
+touched. A report whose stylesheet uses a colour Archeion does not recognise keeps its light one
+instead of going half dark, and `build` counts those for you.
 
 ## Where the details are
 

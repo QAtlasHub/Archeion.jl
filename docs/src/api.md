@@ -23,9 +23,11 @@ default_branch
 
 ```@docs
 new_binding
+registry_of
 deposit
 publish
 doc_fields
+anchors
 ```
 
 ## Checking and reading
@@ -63,4 +65,10 @@ provenance_from
 
 ```@docs
 main
+```
+
+## The module
+
+```@docs
+Archeion
 ```

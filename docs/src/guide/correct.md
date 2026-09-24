@@ -59,7 +59,9 @@ rev = "20260924T130223Z-axz9"
 The name is `<YYYYMMDDTHHMMSSZ>-<origin>-<key>.toml`; use `loc` as the origin for an event you
 write yourself, and four random lowercase characters as the key. Required: `spec`, `kind`, `at`,
 and `subject.record`, which must be *this* record's UUID. `subject.rev` narrows it to one
-revision — leave it out to speak about the record as a whole.
+revision. You may leave it out to speak about the record as a whole, but note that a `yank`
+without a `subject.rev` does **not** withdraw the record: which revision is current is computed
+from the yanks that name one, so a record-level yank is a remark, not a retraction.
 
 Then check it:
 
@@ -67,8 +69,9 @@ Then check it:
 Archeion.validate("path/to/registry")
 ```
 
-`validate` checks the file name, the kind, and that `subject.rev` exists. A subject that does not
-exist is a **warning**, not an error: an event may legitimately outlive what it talks about.
+`validate` checks the file name, the kind, and the subject. A `subject.rev` or `subject.anchor`
+that does not exist is a **warning** — an event may legitimately outlive what it talks about — but
+a `subject.record` that is not this record's UUID is an **error**.
 
 The four kinds `registry/2` knows are `comment`, `yank`, `supersede` and `capability.verified`.
 An unknown kind is also a warning — a reader counts and shows it rather than dropping it — so a
@@ -126,8 +129,12 @@ accepting:
 
   * anyone who cloned or forked the registry still has it
   * any link or digest that named it now points at nothing
-  * if a later revision cited one of its revisions as a parent, the history has a hole, and
-    `validate` will say so
+  * its events go with it, so the reason it was withdrawn is gone too
+
+`validate` will not warn you about the loss. Parents are only ever checked within one record, so
+removing a whole record leaves nothing dangling; the single complaint is that the index no longer
+matches the tree, which `reindex!` silently settles. Deleting one *revision* out of a record is
+the case `validate` does catch, because a sibling names it as a parent.
 
 A `yank` is almost always the honest answer instead. It says *this was here and should not be
 used*, which is true; deletion says nothing at all.

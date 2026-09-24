@@ -57,7 +57,7 @@ Then bring the index up to date and check the result:
 
 ```julia
 Archeion.reindex!("path/to/registry")
-Archeion.validate("path/to/registry")     # -> ok: 0 record(s)
+Archeion.validate("path/to/registry")     # -> (; errors, warnings, summary)
 ```
 
 [`validate`](@ref) reports everything that is wrong at once, and when the index has fallen behind
@@ -137,8 +137,10 @@ So `git init` before your first deposit, not after:
 $ git init && git add -A && git commit -m "the registry"
 ```
 
-And keep committing. Every writer refuses to run against a registry with uncommitted content of
-its own, because a half-written state is what the next deposit would build on.
+And keep committing. [`deposit`](@ref) and [`sync!`](@ref) refuse a registry with uncommitted
+content of its own, because a half-written state is what the next deposit would build on;
+[`migrate!`](@ref) is stricter still and refuses any uncommitted change at all, because its undo is
+`git checkout`.
 
 ## Then
 

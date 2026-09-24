@@ -65,21 +65,24 @@ without anybody having to resolve TOML.
 hygiene. Because the site is a copy, it can hold what a frozen revision may not: a report
 published before this package had a dark mode gets a derived dark layer and a colour-scheme
 control **in the site's copy**, while the revision stays byte-identical under its own checksums.
+(Unless its stylesheet draws with a colour Archeion does not recognise: half a conversion is worse
+than none, so that report keeps its light one and `build` reports how many there are.)
 
 The general rule — anything a reader should get but a revision must not promise belongs in the
 derived layer.
 
 ## Writers refuse; they do not repair
 
-Every writer demands a registry with no uncommitted content of its own, because a half-written
-state is what the next deposit would build on. Beyond that:
+[`deposit`](@ref) and [`sync!`](@ref) demand a registry with no uncommitted content of its own,
+because a half-written state is what the next deposit would build on. [`migrate!`](@ref) is
+stricter — any uncommitted change at all — because its undo is `git checkout`. Beyond that:
 
   * [`deposit`](@ref) stages under `_incoming/` and writes `SHA256SUMS` last, so the presence of
     that file means the revision is complete; if the result does not validate, the revision is
     taken back out
   * [`migrate!`](@ref) settles everything knowable — identifiers, slugs, collisions among them,
-    whether every file parses — before the first rename, and undoes the rest with git if the
-    converted tree does not validate
+    whether every project file and `record.toml` parses — before the first rename, and undoes the
+    rest with git if the converted tree does not validate
 
 The limit is worth knowing rather than discovering: the undo covers the checks, not git itself. A
 `deposit` into a registry that is not a git repository fails at `git add`, *after* the revision
@@ -105,5 +108,4 @@ stack are the parts that are optional.
 ## Where the reasoning lives
 
 This page is a summary. The argument for any particular decision is in the source, beside the code
-it constrains — the module headers in `src/` carry some four hundred lines of it, written to be
-read.
+it constrains — the comments in `src/` run to some four hundred lines, written to be read.
