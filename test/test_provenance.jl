@@ -203,13 +203,31 @@ end
     v = broken(d -> rm(joinpath(d, "repro", "observations", "$t.toml")))
     @test mentions(v.errors, "$t is named but not in repro/observations")
 
+    # A binding this version has not heard of is read as `unverified` (§9), so it is a warning,
+    # and the recorded count still agrees: reading it that way can only ever lower what a point
+    # claims, never raise it, and the promise the counts keep is that nothing claims more than it
+    # can support.
     v = broken() do d
         obs = joinpath(d, "repro", "observations", "$t.toml")
         rewrite!(
             obs, s -> replace(s, "binding = \"unverified\"" => "binding = \"trust-me\"")
         )
     end
-    @test mentions(v.errors, "\"trust-me\" is not one of")
+    @test isempty(v.errors)
+    @test mentions(v.warnings, "not one this version knows")
+
+    # A binding changed to a different *known* one does raise what is claimed, and the counts
+    # recorded at deposit catch it even though SHA256SUMS was rewritten over the edit.
+    v = broken() do d
+        obs = joinpath(d, "repro", "observations", "$t.toml")
+        rewrite!(
+            obs,
+            s -> replace(
+                s,
+                "binding = \"unverified\"" => "binding = \"loaded-differs-from-disk\"",
+            ),
+        )
+    end
     @test mentions(v.errors, "`bindings` does not match")
 
     v = broken() do d
@@ -268,4 +286,28 @@ end
     finally
         rm(dir; recursive=true)
     end
+end
+
+@testset "provenance: a binding this version has not heard of is read, not refused" begin
+    # SPEC §9: a data store may add a binding — a process launched from the snapshot (§10) —
+    # without a new spec version. If meeting one made a registry invalid, that promise would be
+    # empty: DataVault could never add a kind without breaking every registry already written.
+    store = synthetic_store(; binding="launched-from-snapshot")
+    deposited([point("k1", store.token)]; store) do root, res
+        @test !(res isa Exception)
+        r, _ = Archeion.validate(root)
+        @test isempty(r.errors)                                    # read, not refused
+        @test mentions(r.warnings, "not one this version knows")   # and said so
+        @test mentions(r.warnings, "read as `unverified`")
+    end
+end
+
+@testset "provenance: what a binding can support is what it is counted as" begin
+    # The reader's own judgement, in one place: anything it cannot take at face value counts as
+    # claiming nothing about the code that ran.
+    @test Archeion._counted("loaded-differs-from-disk") == "loaded-differs-from-disk"
+    @test Archeion._counted("unverified") == "unverified"
+    @test Archeion._counted("loaded-matches-disk") == "unverified"   # cannot be shown from inside
+    @test Archeion._counted("launched-from-snapshot") == "unverified" # not known to this version
+    @test Archeion._counted("unknown") == "unverified"                # nor is a missing one
 end

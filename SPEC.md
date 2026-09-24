@@ -148,7 +148,7 @@ render time; it is never reconstructed by parsing the rendered output.
 | `source` | no | where the code came from (§5.3) |
 | `preservation.level` | yes | `"read"`; higher levels are established by events (§6) |
 | `preservation.external` | no | URLs the revision needs to display fully |
-| `migrated` | no | set when the revision was converted from an older format |
+| `migrated` | no | written only by a conversion from `archeion/0.3`, which predates this format and rewrote revisions. A `registry/1` → `registry/2` conversion never writes it: it may not open a revision at all, and says what the record was on the record instead (§4, §11) |
 
 Unknown fields are ignored by readers. A later `registry/2` never adds a required field; that needs
 `registry/3`, and readers keep reading the versions before it.
