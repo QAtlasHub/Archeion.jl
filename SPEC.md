@@ -317,6 +317,16 @@ the catalogue, search indexes, the current revision of a record, counts.
 - **Comments from GitHub.** Import by a full, idempotent scan; the key of an imported event.
 - **Public copies.** A public revision generated afresh from a public profile, with the private
   correspondence recorded on the private side only.
+- **A union catalogue over several registries.** A registry's weight is its working tree, not its
+  history: every revision ever deposited is still a live directory at `HEAD`, so a shallow or
+  blobless clone saves nothing and `validate` reads every byte it checksums. The way out is to
+  retire a whole registry and open the next one — never to move a record, whose bindings live in
+  repositories this one cannot reach — and to index the set. Such an index holds no payload: one
+  line per record, as in §2.1, plus which registry holds it, which is about 110 bytes; and it
+  changes only when a record is created or a registry joins, never on a deposit. It would need a
+  mark for a registry that is closed, a way to resolve a registry UUID to a location, and — since
+  a stale union catalogue is worse than none — a record of when each member was last read and a
+  digest to check that against.
 
 ## 11. Migrating from `registry/1`
 
