@@ -123,3 +123,46 @@ end
         @test Archeion.DARK[name] == value
     end
 end
+
+@testset "theme: a report that brought its own control is not given a second one" begin
+    # The shape every deposit produces from Pinax 0.1.5 onward. Its stylesheet answers the query
+    # itself, so `dark.jl` has nothing to derive, and its page already carries the button — two
+    # independent reasons to leave it alone, which is worth checking together, because a page with
+    # two buttons is what happens if either one is forgotten.
+    #
+    # Built from Pinax's own constants rather than by rendering: what makes this real is that the
+    # strings are the shipped ones, and the testsets above are what fail if they stop being.
+    with_fixture() do root, rec, rev
+        g = joinpath(rev, "gallery")
+        write(
+            joinpath(g, "style.css"),
+            LIGHT_SHEET *
+            "\n@media (prefers-color-scheme: dark){body{background:#0d1117}}\n",
+        )
+        page = joinpath(g, "index.html")
+        write(
+            page,
+            replace(
+                read(page, String),
+                "</head>" => """<link rel="stylesheet" href="style.css"></head>""",
+                "<body>" => "<body>" * Pinax._APPEARANCE_BUTTON,
+            ) * Pinax._appearance_foot("system"),
+        )
+        Archeion.write_sums(rev)
+        @test isempty(Archeion.validate(root).errors)
+
+        frozen = read(page, String)
+        r = Archeion.build(root)
+        @test r.dark.already == 1 && r.dark.dark == 0 && r.dark.controls == 0
+
+        copied = read(
+            joinpath(
+                root, "_site", REC_REL, "revisions", basename(rev), "gallery", "index.html"
+            ),
+            String,
+        )
+        @test copied == frozen                               # the strongest form of "left alone"
+        @test length(collect(eachmatch(r"<button class=\"pinax-appearance\"", copied))) == 1
+        @test !occursin("data-appearance-dark", copied)      # nothing of Archeion's was added
+    end
+end
