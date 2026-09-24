@@ -109,4 +109,4 @@ touched.
 ## Where the details are
 
 Everything above has a docstring saying what each argument means, what comes back, and what it
-refuses to do. [The API](@ref API) lists them grouped by when you need them.
+refuses to do. [The API References](@ref API-References) list them grouped by when you need them.

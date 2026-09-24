@@ -2,7 +2,7 @@
 CurrentModule = Archeion
 ```
 
-# API
+# API References
 
 What a caller needs, grouped by when they need it. Everything else in the module is an internal
 detail and may move between patch releases.

@@ -73,6 +73,9 @@ The step-by-step is its own section, in the order you meet it:
 | [Correct or withdraw](@ref Correct-or-withdraw-a-result) | what to do when an answer was wrong — revisions are never edited |
 | [Everything else](@ref Everything-else) | the command line, shared registries, migration, provenance |
 
+Why it is built the way it is — frozen revisions, a derived index, bindings in someone else's
+repository — is [Architecture](@ref). The rules themselves are [the format](@ref The-format).
+
 In short: [`init`](@ref) once for the registry, [`new_binding`](@ref) once per record, and
 [`deposit`](@ref) every time you have a new answer. The first revision and the tenth are the same
 call.

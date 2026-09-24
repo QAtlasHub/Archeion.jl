@@ -47,8 +47,9 @@ makedocs(;
             "Correct or withdraw" => "guide/correct.md",
             "Everything else" => "guide/everything-else.md",
         ],
+        "Architecture" => "architecture.md",
         "The format" => "spec.md",
-        "API" => "api.md",
+        "API References" => "api.md",
     ],
     checkdocs=:none,   # the internals carry docstrings too; the API page lists what is public
 )
