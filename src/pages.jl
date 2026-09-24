@@ -187,9 +187,8 @@ end
 
 # The version a registry says it is read with, or nothing when it does not say.
 function implementation_named(root)
-    path = joinpath(root, "registry.toml")
-    isfile(path) || return nothing
-    return get(TOML.parsefile(path), "implementation", nothing)
+    isfile(registry_file(root)) || return nothing
+    return get(read_registry_toml(root), "implementation", nothing)
 end
 
 # What the person still has to do, which no file can do for them.

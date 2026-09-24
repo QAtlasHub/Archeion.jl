@@ -191,8 +191,7 @@ apply()})();
 # What the site calls itself, from `registry.toml`'s `[site]`. A registry that says nothing still
 # gets a name — its own — so the banner is never empty; everything beyond that is optional.
 function site_config(root, fallback)
-    path = joinpath(root, "registry.toml")
-    reg = isfile(path) ? TOML.parsefile(path) : Dict{String,Any}()
+    reg = read_registry_toml(root)
     site = get(reg, "site", Dict{String,Any}())
     links = [
         (;
