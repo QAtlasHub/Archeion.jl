@@ -9,12 +9,23 @@ const PROVENANCE_SCHEMA = "registry.provenance/1"
 const POINT_COLUMNS = (
     "key", "file", "read_sha256", "result_sha256", "observation", "completed_at"
 )
+# The bindings this version has heard of. Not the same set as `COUNTED` below: a reader knows
+# `loaded-matches-disk` and still refuses to count it, and a reader may meet one it has never
+# heard of and must still read the registry.
 const BINDINGS = Set(["loaded-matches-disk", "loaded-differs-from-disk", "unverified"])
 
+# What a binding can support, which is not always what it says.
+#
 # A match cannot be shown from inside the computing process (code defined in a script, a closure,
 # or a method added to Base leaves no trace to check), and DataVault 0.8.6 no longer writes one. An
 # earlier observation's `loaded-matches-disk` is therefore counted as what it can support.
-_counted(binding) = binding == "loaded-matches-disk" ? "unverified" : binding
+#
+# A binding this reader does not know is counted the same way, and the spec requires it: a data
+# store may add one — a process launched from the snapshot (§10) — without a new spec version, so
+# meeting a fourth kind means reading a registry written by something newer, not a broken one.
+# `unverified` is exactly the right answer, because it claims nothing about the code that ran.
+const COUNTED = Set(["loaded-differs-from-disk", "unverified"])
+_counted(binding) = binding in COUNTED ? binding : "unverified"
 const POINTS_FILE = "provenance/points.tsv"
 
 # Content-addressed names are cut to 32 hex (128 bits) in paths, so they stay within R3 (64 per
@@ -251,11 +262,15 @@ function check_provenance(r, revdir)
             "closure, a method added to Base); it is counted as `unverified`",
         )
         binding_of_token[t] = _counted(string(binding))
-        binding in BINDINGS || err!(
-            r,
-            obs_path,
-            "`binding` $(repr(binding)) is not one of $(sort(collect(BINDINGS)))",
-        )
+        binding === nothing && err!(r, obs_path, "required field `binding` is missing")
+        binding === nothing ||
+            binding in BINDINGS ||
+            warn!(
+                r,
+                obs_path,
+                "`binding` $(repr(binding)) is not one this version knows; it is read as " *
+                "`unverified`, which claims nothing about the code that ran",
+            )
         snapshot = get(obs, "source", nothing)
         snapshot === nothing && continue
         occursin(SNAPSHOT, snapshot) ||
