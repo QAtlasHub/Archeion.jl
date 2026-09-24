@@ -38,12 +38,36 @@ end
 # The registry/1 fixture's one record directory, by its registry/1 name.
 old_dir_of(root) = joinpath(root, "records", "2026", "2026-09-15-logistic-map-r_4aehb2y5")
 
+# Removing a temp tree can lose a race with git. A repository does background housekeeping in
+# `.git/objects` and deletes its own scratch files, so a recursive walk can see one and find it
+# gone before it unlinks it. Measured on CI 2026-09-24:
+#
+#     IOError: unlink("/tmp/jl_9Tw1ZW/.git/objects/bitmap-ref-tips_UxqjeQ"): ENOENT
+#
+# reported as a failure of `test_publish.jl`, whose assertions had all passed. Failing a green test
+# because a directory under /tmp outlived the run is reporting the wrong thing — so this retries
+# once the race has had a moment to settle, and then lets the directory go. The OS reaps /tmp, and
+# a leaked temp directory is not a defect in the thing under test.
+function rm_tree(path; tries=3)
+    for i in 1:tries
+        try
+            rm(path; recursive=true, force=true)
+            return true
+        catch e
+            e isa Base.IOError || rethrow()
+            i == tries && return false
+            sleep(0.1i)
+        end
+    end
+    return false
+end
+
 function with_fixture(f)
     root, rec, rev = fixture_copy()
     try
         f(root, rec, rev)
     finally
-        rm(root; recursive=true)
+        rm_tree(root)
     end
 end
 
