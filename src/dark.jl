@@ -8,9 +8,14 @@
 # The site, though, is not the registry. `build` copies each revision into `_site` and rewrites
 # that copy on every run (§2 — the site is derived and never committed), so the copy may carry
 # what the original cannot. What is derived here is a dark layer: the same stylesheet again, its
-# colours exchanged for their dark counterparts, inside `@media (prefers-color-scheme: dark)`.
-# Same selectors, same specificity, later in the file — so it wins exactly when the reader's
-# system asks for it, and the registry's own bytes are never touched.
+# colours exchanged for their dark counterparts, written beside it as `style.dark.css` and linked
+# by the page after its own sheet. Same selectors, same specificity, later in the cascade — so it
+# wins exactly when it is asked for, and the registry's own bytes are never touched.
+#
+# *When* it is asked for is the linking page's `media` attribute, and that is why the layer is a
+# file rather than bytes appended inside an `@media` block: an attribute can be rewritten by the
+# control (appearance.jl), a query baked into the copy cannot. Without JavaScript the attribute
+# stays as written — the system's answer — which is what this did before there was a control.
 
 # Every colour Pinax has drawn with, by what it is for rather than what it is. Six frozen
 # stylesheets across the two registries spell 44 distinct colours; all of them are here, because a
@@ -209,8 +214,8 @@ end
 """
     darkened(css) -> NamedTuple
 
-The dark layer for `css`: `layer`, the `@media (prefers-color-scheme: dark)` block to append, and
-`why`, which says what happened —
+The dark layer for `css`: `layer`, the same stylesheet with its colours exchanged, and `why`,
+which says what happened —
 
 - `:ok` — a layer was derived, and `layer` is it
 - `:already` — the stylesheet answers the query itself and keeps its own dark mode
@@ -227,11 +232,7 @@ function darkened(css)
     body = recoloured(css, unknown)
     isempty(unknown) || return (; layer="", why=:unknown, unknown=sort!(collect(unknown)))
     body == css && return (; layer="", why=:colourless, unknown=String[])
-    return (;
-        layer="\n@media (prefers-color-scheme: dark){\n" * body * "\n}\n",
-        why=:ok,
-        unknown=String[],
-    )
+    return (; layer=body, why=:ok, unknown=String[])
 end
 
 # The stylesheet a face of a revision is read through. A vendored file is someone else's to
@@ -241,24 +242,59 @@ function is_own_stylesheet(rel)
     return endswith(rel, ".css") && !("assets" in splitpath(rel))
 end
 
+# The derived layer lives beside the sheet it came from rather than inside it: `style.css` gains a
+# `style.dark.css`, and the page links it with a `media` the control can rewrite. Appended to the
+# copy instead, the rules would be fixed to the system's answer forever, and a reader on a dark
+# desktop could never ask one report to stay light.
+dark_sheet_of(path) = chop(path; tail=length(".css")) * ".dark.css"
+
+const DARK_SHEET_HEAD = """
+/* Derived by Archeion from the stylesheet beside this one: the same rules and the same selectors,
+   its colours exchanged for their dark counterparts (src/dark.jl). The revision this was copied
+   from is frozen under its own SHA256SUMS and holds no such file; `_site` is derived and rewritten
+   on every build. When it applies is the linking page's `media` attribute, which is how the
+   reader's choice reaches these rules. */
 """
-    darken_site_copy!(dir) -> NamedTuple
+
+# A page's own stylesheets, as it spells them. A sheet somewhere else — a CDN, a site-absolute
+# path — is not ours to darken and not ours to resolve.
+function linked_stylesheets(html)
+    out = String[]
+    for m in eachmatch(r"<link\b[^>]*>"i, html)
+        tag = m.match
+        occursin(r"rel\s*=\s*[\"']stylesheet[\"']"i, tag) || continue
+        h = match(r"href\s*=\s*\"([^\"]+)\""i, tag)
+        h === nothing && continue
+        href = h[1]
+        (occursin("://", href) || startswith(href, "/")) && continue
+        push!(out, href)
+    end
+    return out
+end
+
+"""
+    darken_site_copy!(dir, appearance = "system") -> NamedTuple
 
 Give every stylesheet under `dir` — a copy of a revision inside `_site`, never the revision — a
-dark layer. Returns what happened, counted: `dark`, `already`, `colourless`, `unknown`, and
-`unknown_colours`, the ones that stopped a stylesheet from being converted. A report left light is
-the one failure this must not keep to itself.
+dark layer, and every page that links one the control to switch it. `appearance` is the scheme a
+reader who has not chosen gets.
+
+Returns what happened, counted: `dark`, `already`, `colourless`, `unknown`, `unknown_colours` —
+the ones that stopped a stylesheet from being converted — and `controls`, the pages that came away
+switchable. A report left light is the one failure this must not keep to itself.
 """
-function darken_site_copy!(dir)
-    dark = already = colourless = unknown = 0
+function darken_site_copy!(dir, appearance="system")
+    dark = already = colourless = unknown = controls = 0
     colours = Set{String}()
+    converted = Set{String}()                  # the sheets a page may now be offered a switch for
     for (d, _, files) in walkdir(dir), f in files
         rel = relpath(joinpath(d, f), dir)
         is_own_stylesheet(rel) || continue
         path = joinpath(d, f)
         r = darkened(read(path, String))
         if r.why === :ok
-            open(io -> print(io, r.layer), path, "a")
+            write(dark_sheet_of(path), DARK_SHEET_HEAD * r.layer)
+            push!(converted, rel)
             dark += 1
         elseif r.why === :already
             already += 1
@@ -271,5 +307,28 @@ function darken_site_copy!(dir)
                    know, and half a conversion is worse than none" path colours = r.unknown
         end
     end
-    return (; dark, already, colourless, unknown, unknown_colours=sort!(collect(colours)))
+
+    for (d, _, files) in walkdir(dir), f in files
+        endswith(lowercase(f), ".html") || continue
+        path = joinpath(d, f)
+        here = dirname(relpath(path, dir))
+        html = read(path, String)
+        hrefs = [
+            dark_sheet_of(h) for
+            h in linked_stylesheets(html) if normpath(joinpath(here, h)) in converted
+        ]
+        out = inject_appearance(html, appearance, hrefs)
+        out === nothing && continue
+        write(path, out)
+        controls += 1
+    end
+
+    return (;
+        dark,
+        already,
+        colourless,
+        unknown,
+        unknown_colours=sort!(collect(colours)),
+        controls,
+    )
 end

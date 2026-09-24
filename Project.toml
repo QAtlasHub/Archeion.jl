@@ -1,6 +1,6 @@
 name = "Archeion"
 uuid = "4f7774e9-efb7-42d6-b735-122dcc7ea7b8"
-version = "0.8.4"
+version = "0.8.5"
 authors = ["sota shimozono <shimozono-sota631@g.ecc.u-tokyo.ac.jp>"]
 
 [deps]
@@ -23,7 +23,7 @@ ArcheionPinaxExt = "Pinax"
 Aqua = "0.8"
 DataVault = "0.8.5"
 Dates = "1"
-Pinax = "0.1, 0.36, 0.37"
+Pinax = "0.1.5"
 Random = "1"
 SHA = "0.7"
 TOML = "1"
