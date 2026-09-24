@@ -10,11 +10,24 @@ Pinax renders one study into a self-contained report. Archeion is where those re
 registry that keeps them, keeps them findable, and keeps the old ones exactly as they were when
 you published them.
 
-A registry is a git repository of plain files — one directory per record, one frozen directory per
-revision. Nothing has to be running for it to be read. A result you can only open through a
-service is a result that expires when the service does; here, a reader with `ls` and a browser can
-follow the whole thing, and Archeion is a convenience for *writing* it rather than a requirement
-for reading it.
+A registry is a **directory tree** — one directory per record, one frozen directory per revision.
+A result you can only open through a service is a result that expires when the service does, so
+nothing has to be running for this one to be read, and nothing has to be installed to read it: no
+database, no server, and no git.
+
+Archeion's *writers* do use git, so that a deposit is a commit and a failed conversion can be
+undone. Reading is a different matter — `validate`, `build` and the index never touch it, and a
+reader needs neither Archeion nor git at all.
+
+That is what lets a registry be read wherever it happens to live:
+
+| | |
+|---|---|
+| **a published site** | GitHub Pages, from `pages.yml` |
+| **a private machine, over SSH** | built into a directory on your own runner and read from there — through Tailscale, an SSH file browser, or anything else that reaches the filesystem |
+| **the files themselves** | `ls`, an editor, `sha256sum -c`, a browser on `file://` |
+
+Every link the site generates is relative, so the last two work without a web server.
 
 !!! tip "A demonstration repository"
     [**archeion-demo**](https://github.com/QAtlasHub/archeion-demo) is a small public registry,
@@ -64,12 +77,15 @@ In short: [`init`](@ref) once for the registry, [`new_binding`](@ref) once per r
 [`deposit`](@ref) every time you have a new answer. The first revision and the tenth are the same
 call.
 
-## Reading a registry without any of this
+## Reading a registry without Archeion, or git, or a web server
 
 Open `registry.toml`: it lists every project and record by UUID, with a path. Follow the path.
 Each record says what it is in `record.toml`; each revision holds its report, an `entry.toml`, a
 `README.md` and a `SHA256SUMS`. `sha256sum -c SHA256SUMS` verifies one on any machine with
 coreutils.
+
+None of that needs this package, and none of it needs the repository to be a git repository
+either — a copy on a disk, or a directory you reach over SSH, is the same registry.
 
 [The demonstration repository's tree](https://github.com/QAtlasHub/archeion-demo/tree/master/records/2026/logistic-map)
 is the shortest way to check that this is true.

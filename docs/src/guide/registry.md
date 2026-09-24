@@ -77,16 +77,29 @@ Archeion.setup_pages("path/to/registry")   # -> (; written, skipped)
 |---|---|---|
 | `validate.yml` | every pull request and push | runs `validate` and `build`, so a broken registry cannot merge |
 | `pages.yml` | push to the default branch | builds the site and publishes it to GitHub Pages |
-| `site.yml` | in place of `pages.yml`, when you ask for it | builds the site as an artifact, for a registry that must not be public |
+| `site.yml` | in place of `pages.yml`, when you pass `site` | builds into a directory on your own runner, to be read from there over SSH |
 
 The Archeion version is pinned into the workflows — to the version that wrote them — and that is
 the version `registry.toml`'s `implementation` field should name. Re-run `setup_pages` after an
 upgrade so the two agree; `written` and `skipped` tell you which files it touched.
 
 !!! warning "A private repository's Pages site is public"
-    GitHub Pages serves a site to anyone with the URL whether or not the repository is private. If
-    the registry must not be readable, take the `site.yml` variant, which produces an artifact
-    instead of a published site.
+    On every plan but Enterprise Cloud, GitHub Pages serves a site to anyone with the URL whether
+    or not the repository is private. For a registry that must not be readable, do not publish it:
+
+    ```julia
+    Archeion.setup_pages("path/to/registry";
+                         runner = "self-hosted",
+                         site   = "/srv/registry-site")
+    ```
+
+    That writes `site.yml` instead of `pages.yml`. The site is rebuilt into that directory on the
+    machine `runner` names, on every push, and read from there over SSH — through Tailscale, an
+    SSH file browser, or any other way you already reach that filesystem. Nothing is published and
+    no URL exists to leak.
+
+    It is a real http origin rather than `file://`, which matters for anything in a report that a
+    browser treats as cross-origin.
 
 ## 4. Commit
 
