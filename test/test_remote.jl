@@ -63,10 +63,19 @@ tracked(dir, ref) = read(`git -C $dir ls-tree -r --name-only $ref`, String)
         Archeion.sync!(clone)
         @test isfile(joinpath(clone, "later.txt"))          # fast-forwarded to the remote
 
+        # A file beside the registry is not the registry: a scratch note, a derived site, a
+        # binding committed in some other repository are none of a deposit's business.
         write(joinpath(clone, "scratch.txt"), "uncommitted\n")
-        e = attempt(() -> Archeion.sync!(clone))
-        @test e isa ErrorException && occursin("uncommitted changes", e.msg)
+        Archeion.sync!(clone)
         rm(joinpath(clone, "scratch.txt"))
+
+        # The registry's own content is another matter — an uncommitted record is exactly what a
+        # later deposit would build on and nobody else would ever see.
+        write(joinpath(clone, "projects", "stray.toml"), "spec = \"registry/2\"\n")
+        e = attempt(() -> Archeion.sync!(clone))
+        @test e isa ErrorException && occursin("uncommitted changes of its own", e.msg)
+        @test occursin("projects/stray.toml", e.msg)
+        rm(joinpath(clone, "projects", "stray.toml"))
     end
 end
 

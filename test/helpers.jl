@@ -35,6 +35,9 @@ function v1_copy()
     return root
 end
 
+# The registry/1 fixture's one record directory, by its registry/1 name.
+old_dir_of(root) = joinpath(root, "records", "2026", "2026-09-15-logistic-map-r_4aehb2y5")
+
 function with_fixture(f)
     root, rec, rev = fixture_copy()
     try

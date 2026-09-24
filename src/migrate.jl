@@ -32,7 +32,11 @@ function isdirty(root)
     return !isempty(something(git(root, "status", "--porcelain"; ok=true), ""))
 end
 
-# What the record was called, taken from the revision a reader would have been shown.
+# What the record was called, taken from the revision a reader would have been shown. A registry
+# that validates always has one to read: §4 requires a record to hold at least one revision and
+# §5.1 requires `doc.title` in every entry, and `migrate!` validates what it produced — so a record
+# this could not name would fail the conversion anyway, and the `fallback` is only ever reached on
+# a tree that was already broken.
 function current_title(recdir, fallback)
     revs = entries(joinpath(recdir, "revisions"))
     isempty(revs) && return fallback
@@ -98,11 +102,6 @@ function migrate!(root)
     haskey(read_registry_toml(root), "uuid") || set_head!(root, "uuid", new_uuid())
     reindex!(root)
 
-    isempty(plan.untitled) || @warn(
-        "registry/1 stored no title for these records and no revision supplies one; they are " *
-            "named after their directory until someone writes a title into record.toml",
-        records = plan.untitled
-    )
     projects, records = length(plan.projects), length(plan.records)
     r = validate(root)
     isempty(r.errors) ||
@@ -110,9 +109,7 @@ function migrate!(root)
     # `ids` is the conversion's one unrecoverable-by-guessing output: a binding lives in the
     # repository that renders the report, not in the registry, so nothing here can update it, and
     # whoever runs this needs to know which UUID replaced which identifier to do it themselves.
-    return (;
-        projects, records, summary=r.summary, ids=plan.ids, untitled=plan.untitled, at
-    )
+    return (; projects, records, summary=r.summary, ids=plan.ids, at)
 end
 
 # What the conversion will do, and every reason it cannot. Nothing here writes: a registry that
@@ -141,7 +138,6 @@ function plan_migration(root)
 
     base = joinpath(root, "records")
     records = Tuple{String,String,Dict{String,Any},String}[]
-    untitled = String[]
     for year in (isdir(base) ? entries(base) : String[])
         ydir = joinpath(base, year)
         byslug = Dict{String,String}()
@@ -167,13 +163,8 @@ function plan_migration(root)
             d = TOML.parsefile(joinpath(old_dir, "record.toml"))
             string(get(d, "id", "")) == old_id ||
                 error("$old_dir/record.toml says `id` $(repr(get(d, "id", nothing)))")
-            # A title registry/1 never stored and no revision supplies is the slug, which reads
-            # like a title and is not one. Say whose, so it can be written by hand afterwards.
-            haskey(d, "title") ||
-                current_title(old_dir, nothing) !== nothing ||
-                push!(untitled, "records/$year/$slug")
             push!(records, (old_dir, joinpath(ydir, slug), d, slug))
         end
     end
-    return (; ids, projects, records, untitled)
+    return (; ids, projects, records)
 end

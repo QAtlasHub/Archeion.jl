@@ -265,3 +265,87 @@ end
     )
     rm(root; recursive=true)
 end
+
+@testset "migrate: every reason it refuses, and the tree untouched after each" begin
+    # A conversion is one-shot and hard to undo, so each of these should be met in a test rather
+    # than for the first time on a real registry.
+    pdir(root) = joinpath(root, "projects")
+    y(root) = joinpath(root, "records", "2026")
+    old(root) = joinpath(y(root), "2026-09-15-logistic-map-r_4aehb2y5")
+
+    for (what, break!, says) in (
+        (
+            "two projects with one id",
+            root -> cp(
+                joinpath(pdir(root), "p_z7ne42dt.toml"),
+                joinpath(pdir(root), "p_other.toml"),
+            ),
+            "names more than one project",
+        ),
+        (
+            "two projects that slugify the same",
+            function (root)
+                other = joinpath(pdir(root), "p_aaaaaaaa.toml")
+                cp(joinpath(pdir(root), "p_z7ne42dt.toml"), other)
+                edit!(other, "r_", "r_")                       # keep the file shape
+                edit!(other, "p_z7ne42dt", "p_aaaaaaaa")
+            end,
+            "would be called demo",
+        ),
+        (
+            "a directory that is not a record",
+            root -> mkpath(joinpath(y(root), "notes-and-things")),
+            "is not a registry/1 record directory",
+        ),
+        (
+            "record.toml disagreeing with its directory",
+            root -> edit!(joinpath(old(root), "record.toml"), "r_4aehb2y5", "r_zzzzzzzz"),
+            "record.toml says `id`",
+        ),
+    )
+        root = v1_copy()
+        break!(root)
+        before = sort(readdir(y(root))), sort(readdir(pdir(root)))
+        e = attempt(() -> Archeion.migrate!(root))
+        @test e isa ErrorException
+        @test occursin(says, e.msg)
+        # nothing was renamed and nothing was rewritten: refusing happens before any write
+        @test (sort(readdir(y(root))), sort(readdir(pdir(root)))) == before
+        @test Archeion.spec_of(root) == "registry/1"
+        rm(root; recursive=true)
+    end
+end
+
+@testset "migrate: a record a conversion could not name cannot exist" begin
+    # `current_title` has a fallback to the slug, and it is unreachable for any tree that
+    # validates: §4 requires a record to hold at least one revision, §5.1 requires `doc.title` in
+    # every entry, and `migrate!` validates what it produced. Both halves are measured here so the
+    # fallback is not mistaken for a case someone should handle.
+    root = v1_copy()
+    rm(joinpath(old_dir_of(root), "revisions"); recursive=true)
+    mkpath(joinpath(old_dir_of(root), "revisions"))
+    e = attempt(() -> Archeion.migrate!(root))
+    @test e isa ErrorException && occursin("at least one revision", e.msg)
+    rm(root; recursive=true)
+
+    root = v1_copy()
+    rev = joinpath(old_dir_of(root), "revisions", REV_NAME)
+    edit!(entry(rev), "title = ", "was_title = ")
+    sums = joinpath(rev, "SHA256SUMS")
+    write(
+        sums,
+        join(
+            [
+                if endswith(l, "  entry.toml")
+                    bytes2hex(open(sha256, entry(rev))) * "  entry.toml"
+                else
+                    l
+                end for l in eachline(sums)
+            ],
+            "\n",
+        ) * "\n",
+    )
+    e = attempt(() -> Archeion.migrate!(root))
+    @test e isa ErrorException && occursin("`doc.title` is missing", e.msg)
+    rm(root; recursive=true)
+end
