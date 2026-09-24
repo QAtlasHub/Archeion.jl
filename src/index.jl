@@ -16,13 +16,25 @@ end
 
 spec_of(root) = get(read_registry_toml(root), "spec", nothing)
 
+# A file that is not TOML is not this function's to complain about — `validate` names it, and
+# `reindex!` is only ever run on a tree that validates. Skipping it keeps the scan from throwing
+# out of the middle of a check whose whole job is to report what is wrong.
+function readable(path)
+    try
+        return TOML.parsefile(path)
+    catch
+        return nothing
+    end
+end
+
 # Walk the tree and say what is in it: `uuid => (name, path)` per project and record. This is the
 # definition of the index; everything else compares against what this returns.
 function scan(root)
     projects = Dict{String,Any}()
     for f in entries(joinpath(root, "projects"))
         endswith(f, ".toml") || continue
-        d = TOML.parsefile(joinpath(root, "projects", f))
+        d = readable(joinpath(root, "projects", f))
+        d === nothing && continue
         haskey(d, "uuid") || continue
         projects[string(d["uuid"])] = Dict{String,Any}(
             "name" => string(get(d, "name", splitext(f)[1])), "path" => "projects/$f"
@@ -35,7 +47,8 @@ function scan(root)
         for slug in entries(joinpath(base, year))
             file = joinpath(base, year, slug, "record.toml")
             isfile(file) || continue
-            d = TOML.parsefile(file)
+            d = readable(file)
+            d === nothing && continue
             haskey(d, "uuid") || continue
             records[string(d["uuid"])] = Dict{String,Any}(
                 "name" => string(get(d, "title", slug)), "path" => "records/$year/$slug"
