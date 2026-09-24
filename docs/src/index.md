@@ -4,93 +4,66 @@ CurrentModule = Archeion
 
 # Archeion
 
-A registry of rendered research results: plain files in a git repository, one directory per
-record, one frozen directory per revision, and nothing that has to be running for them to be read.
+**Archeion is the registry manager for [Pinax](https://github.com/QAtlasHub/Pinax.jl).**
 
-That last clause is the whole design. A result you can only open through a service is a result
-that expires when the service does. Here a registry is a directory tree; a reader with `ls` and a
-browser can follow it, and Archeion.jl is a convenience for *writing* one — not a precondition for
-reading one.
+Pinax renders one study into a self-contained report. Archeion is where those reports go: a
+registry that keeps them, keeps them findable, and keeps the old ones exactly as they were when
+you published them.
 
-!!! tip "There is one you can open right now"
-    [**archeion-demo**](https://qatlashub.github.io/archeion-demo/) is a real registry, built by
-    this package on every push. Two records, several revisions each, and every link on it
-    relative. The page you land on is the catalogue; the
+A registry is a git repository of plain files — one directory per record, one frozen directory per
+revision. Nothing has to be running for it to be read. A result you can only open through a
+service is a result that expires when the service does; here, a reader with `ls` and a browser can
+follow the whole thing, and Archeion is a convenience for *writing* it rather than a requirement
+for reading it.
+
+!!! tip "A demonstration repository"
+    [**archeion-demo**](https://github.com/QAtlasHub/archeion-demo) is a small public registry,
+    built by Archeion on every push. It is the quickest way to see what this produces.
+
+    [The site it builds](https://qatlashub.github.io/archeion-demo/) — the page you land on is the
+    catalogue; the
     [logistic map record](https://qatlashub.github.io/archeion-demo/records/2026/logistic-map/)
-    shows what a record looks like once it has a history, and
+    is a record with a history behind it, and
     [its current revision](https://qatlashub.github.io/archeion-demo/records/2026/logistic-map/revisions/20260922T060556Z-t8c9/gallery/)
-    is a frozen answer.
+    is one frozen answer.
 
-    The tree behind it is at
-    [QAtlasHub/archeion-demo](https://github.com/QAtlasHub/archeion-demo) — worth a look in the
-    other order: read the files first, then the site they produce.
+    Worth reading in the other order, though: the files first, then the site. The files are the
+    registry; the site is made from them.
+
+## What you get
+
+| | |
+|---|---|
+| **a record** | one question you keep coming back to |
+| **a revision** | one answer to it, frozen — checksummed, never edited, naming the answer it came after |
+| **a catalogue** | a static site built from the tree, every link relative, readable over `file://` |
+
+A record accumulates revisions instead of being overwritten, so "what did we think in September"
+stays answerable. A revision is covered by its own `SHA256SUMS`, so a digest you cited in a paper
+keeps meaning what it meant.
+
+Names live in the paths, identity lives in the files: every record and project carries a UUID, and
+the directory is named by a slug. That is why renaming a record breaks nothing, and why two
+registries can use the same slug for different things.
+
+The exact rules are in [the format](@ref The-format). You do not need them to use this — they are
+there so that somebody who finds your registry in ten years does not need this package either.
+
+## Getting started
+
+### If you are starting a new registry
 
 ```julia
 using Archeion
-
-Archeion.init("path/to/registry"; title = "The Registry")   # once: its directories and its config
-Archeion.validate("path/to/registry")                       # (; errors, warnings, summary)
-Archeion.build("path/to/registry")                          # a static site in _site/
-```
-
-The package depends on the standard library only. Rendering reports and reading measured data are
-somebody else's job — [Pinax](https://github.com/QAtlasHub/Pinax.jl) and
-[DataVault](https://github.com/QAtlasHub/DataVault.jl) — and Archeion learns about them only
-through package extensions, so a registry builds on a machine that has neither.
-
-## What a registry holds
-
-Four kinds of thing, and they nest:
-
-| | what it is | where it lives |
-|---|---|---|
-| **registry** | the whole tree, and `registry.toml` saying what it is | the repository root |
-| **project** | a line of work several records belong to | `projects/<slug>.toml` |
-| **record** | one question, asked once and answered repeatedly | `records/<year>/<slug>/` |
-| **revision** | one frozen answer, with its own checksums | `records/<year>/<slug>/revisions/<stamp>-<tag>/` |
-
-A **revision never changes.** Its `SHA256SUMS` covers every file in it, `entry.toml` included, so
-a digest somebody cited stays true. A record grows by gaining revisions, never by editing one, and
-a revision names its parents — so a record is a history rather than a series of replacements.
-
-Identity is a UUID *inside* the files; the paths carry only slugs. That separation is what lets a
-record be renamed without breaking what pointed at it, and it is why two registries may use the
-same slug for different things without colliding.
-
-The normative description is [the format](@ref The-format) — `SPEC.md`, `spec = "registry/2"`.
-Anything on this page that contradicts it is wrong.
-
-## Which registries are supported
-
-Archeion reads and writes **`registry/2`**, and that is the only format it writes.
-
-  * **`registry/2`** — current and stable. `init` creates one; `validate`, `build` and `deposit`
-    all require one.
-  * **`registry/1`** — read only far enough to convert it. [`migrate!`](@ref) converts in place:
-    every identifier becomes a UUID and leaves the paths, each record moves to
-    `records/<year>/<slug>/`, the index is generated. It is all-or-nothing — everything knowable
-    in advance is settled before the first rename, and if the result fails to validate the
-    conversion is undone. That undo is git's, which is why a registry under git must have nothing
-    uncommitted before one starts; a tree not under git is told it has no undo rather than left
-    half converted.
-  * Anything else — `validate` refuses by name rather than guessing.
-
-A registry states its own format, so a second `migrate!` says "this is already `registry/2`"
-instead of making a mess.
-
-## How to deploy: putting a result into a registry
-
-The path has two halves that are easy to confuse, because one happens **once per record** and the
-other happens **every time there is a new answer**.
-
-### Once, when the registry is new
-
-```julia
 Archeion.init("path/to/registry"; title = "The Registry")
 ```
 
-Then write the project file by hand. There is no `new_project`, deliberately: a project is a line
-of work, and naming one should not happen by accident. `projects/<slug>.toml` needs four fields:
+That writes the directories and `registry.toml`, where `[site]` is what a reader meets first — the
+banner's title, its tagline, its links, and the colour scheme they get before choosing one. Edit
+it now rather than later; it is the only part of a registry that is about you.
+
+Then add a project — a line of work that records belong to. Projects are written by hand on
+purpose: naming one is a decision, not a side effect. `projects/<slug>.toml` wants four fields:
 
 ```toml
 spec = "registry/2"
@@ -99,12 +72,27 @@ name = "Chaotic attractors"
 created = 2026-09-24T12:40:00Z
 ```
 
-`validate` names every missing field at once, and when the index no longer matches the tree it
-says so and tells you to run [`reindex!`](@ref). Then commit: every writer refuses to run against
-a registry with uncommitted content of its own, because a half-written state is what the next
-deposit would build on.
+Run [`validate`](@ref) whenever you are unsure. It names everything that is wrong at once, and
+when the index has fallen behind the tree it says which command fixes it.
 
-### Once, per record
+### If you already have a `registry/1` registry
+
+```julia
+Archeion.migrate!("path/to/registry")
+```
+
+Commit everything first. The conversion is all-or-nothing: it either finishes and validates, or
+it puts your tree back exactly as it was — and "putting it back" is git's job, which is why it
+needs a clean working tree to start from. A registry that is not under git is told it has no undo
+rather than being left half converted.
+
+Nothing else is supported, and `validate` says so by name rather than guessing.
+
+## Publishing a result
+
+Two steps, and the first happens only once per record.
+
+**Once — give the record a name.**
 
 ```julia
 Archeion.new_binding(".registry/bindings/henon.toml";
@@ -113,72 +101,56 @@ Archeion.new_binding(".registry/bindings/henon.toml";
                      slug = "henon-correlation-dimension")
 ```
 
-A **binding** lives in the repository that renders the report, not in the registry, and it is the
-only thing that says which record a script writes to. It carries the registry's relative path, the
-project UUID, a freshly minted record UUID, the slug and the kind. Commit it.
+The binding lives in the repository that *renders* the report, not in the registry, and it is the
+one file that says which record your script writes to. Commit it. You will not touch it again.
 
-It is created once and reused forever — `new_binding` refuses to overwrite an existing file, so a
-copied script cannot silently continue somebody else's record.
+!!! warning "The slug is not checked for collisions here"
+    A name already used by another record of the same year is accepted by `new_binding` and
+    refused at your first [`deposit`](@ref). The refusal is clear and your registry is left
+    untouched, but you are left with a committed binding that points at nothing: delete it and
+    make another. (It cannot be checked earlier — a record is filed under the year it is *frozen*,
+    which is not known yet.)
 
-!!! warning "`new_binding` does not check that the slug is free"
-    It checks the slug's *shape*, not its availability. A name already taken by another record of
-    the same year is accepted here and refused at the first [`deposit`](@ref) — with a clear
-    message, and with the registry left byte-for-byte untouched. What remains is a committed
-    binding holding a record UUID that names nothing: delete it and make another. The check
-    cannot move earlier as things stand, because a record is filed under the year it is *frozen*,
-    which is not known when the binding is written.
-
-### Every time, per revision
+**Every time — deposit the answer.**
 
 ```julia
 deposit(BINDING;
-        gallery = …, agent = …,          # the two rendered faces
+        gallery = …, agent = …,                    # the two faces Pinax rendered
         source_repo = @__DIR__,
         doc = Archeion.doc_fields(Pinax.current_document()))
 ```
 
-Nothing changes between the first revision and the tenth: same binding, same call. `deposit`
-resolves the binding's record UUID against the registry and decides for itself whether it is
-creating a record or adding to one. Parents default to the record's current head, so the history
-links itself.
+The first revision and the tenth are the same call. `deposit` works out for itself whether it is
+creating the record or adding to it, and links the new revision to the one before. If anything
+goes wrong it leaves the registry as it found it — there is no half-deposited state to clean up.
 
-What it does, in order: re-validate the binding (it lives in another repository and is
-hand-editable), check the registry is settled and valid, stage the whole revision under
-`_incoming/`, write `SHA256SUMS` **last** so that its presence means the revision is complete,
-move it into place, reindex, validate again, commit. A failure before the move discards the
-staging directory; a failure after it removes the revision and rewrites the index. The registry is
-never left half-written.
-
-Both calls have a worked example in the demo registry:
+Both calls have a worked example in the demonstration repository:
 [`scripts/build.jl`](https://github.com/QAtlasHub/archeion-demo/blob/master/scripts/build.jl)
-renders with Pinax and calls `deposit` directly, and
+renders with Pinax and deposits, and
 [`scripts/lorenz.jl`](https://github.com/QAtlasHub/archeion-demo/blob/master/scripts/lorenz.jl)
-goes through `publish` from a DataVault vault. Their bindings are committed beside them, under
-[`.registry/bindings/`](https://github.com/QAtlasHub/archeion-demo/tree/master/.registry/bindings).
+goes through [`publish`](@ref) from a DataVault vault — which is the same path with both ends
+attached: it syncs the registry, checks your rendering commit is pushed, renders, deposits, and
+opens a pull request.
 
-[`publish`](@ref) is the same thing with both ends attached, available when Pinax and DataVault
-are loaded: it syncs the registry to its remote, warns if the rendering commit is not published
-yet, renders both faces, deposits, then pushes a branch or opens a pull request.
-
-### Then the site
+## Publishing the catalogue
 
 ```julia
 Archeion.build("path/to/registry")   # -> _site/
 ```
 
-`_site` is **derived**: rewritten on every run, never committed. Because it is a copy it can carry
-what the revisions cannot — a report frozen before dark mode existed gets a derived dark layer and
-a colour-scheme control in the site's copy, while the revision it came from stays byte-identical
-under its own checksums. [`setup_pages`](@ref) writes the workflows that build and publish it.
+`_site` is rebuilt from scratch every time and never committed. Because it is a copy, it can carry
+things the frozen revisions cannot: a report you published before this package had a dark mode
+gets one in the site's copy, while the revision itself stays byte-identical under its checksums.
+
+[`setup_pages`](@ref) writes the GitHub Actions workflows that validate on every pull request and
+publish the site on every push.
 
 ## Reading a registry without any of this
 
 Open `registry.toml`: it lists every project and record by UUID, with a path. Follow the path.
-Each record's `record.toml` says what it is; each revision holds `README.md`, `entry.toml`,
-`SHA256SUMS` and the rendered report. `sha256sum -c SHA256SUMS` checks a revision on any machine
-with coreutils.
+Each record says what it is in `record.toml`; each revision holds its report, an `entry.toml`, a
+`README.md` and a `SHA256SUMS`. `sha256sum -c SHA256SUMS` verifies one on any machine with
+coreutils.
 
-That is the promise the rest of this exists to keep, and
-[the demo's tree on GitHub](https://github.com/QAtlasHub/archeion-demo/tree/master/records/2026/logistic-map)
-is the shortest way to check that it is kept: `record.toml`, then `revisions/`, then one
-revision's `SHA256SUMS`. Nothing there needs this package to make sense.
+[The demonstration repository's tree](https://github.com/QAtlasHub/archeion-demo/tree/master/records/2026/logistic-map)
+is the shortest way to check that this is true.
