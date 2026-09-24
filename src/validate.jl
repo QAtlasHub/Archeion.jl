@@ -35,11 +35,16 @@ warn!(r::Report, path, msg) = push!(r.warnings, "$(rel(r, path)): $msg")
 # Julia's TOML reads `…Z` and a zone-less time into the same DateTime, and rejects any other
 # offset, so R7 is checked on the text: every unquoted date-time must end in `Z`.
 function zone_less_times(text)
+    # The quoted-string pattern is unrolled — `[^"\\\n]*(?:\\.[^"\\\n]*)*` rather than
+    # `(?:[^"\\\n]|\\.)*` — because the second spells the same language with an alternation inside
+    # a quantifier, and PCRE explores it by backtracking: a long enough string exhausts the JIT
+    # stack and `validate` throws where it is meant to report. Found by handing it a 100 000
+    # character value.
     unquoted = replace(
         text,
         r"\"\"\"[\s\S]*?\"\"\"" => "",
         r"'''[\s\S]*?'''" => "",
-        r"\"(?:[^\"\\\n]|\\.)*\"" => "",
+        r"\"[^\"\\\n]*(?:\\.[^\"\\\n]*)*\"" => "",
         r"'[^'\n]*'" => "",
         r"#[^\n]*" => "",
     )
@@ -464,7 +469,12 @@ current. A registry is valid when `errors` is empty; nothing here writes.
 """
 function validate(root)
     r = Report(abspath(root))
-    spec = spec_of(r.root)
+    # Read through `load` like every other file: `spec_of` parses straight through, which is right
+    # for a writer that has already been told the tree is sound, and wrong for the one function
+    # whose job is to be handed a tree that is not. A `registry.toml` that is not TOML used to
+    # throw out of here, so CI printed a stack trace instead of naming the file.
+    reg = isfile(registry_file(r.root)) ? load(r, registry_file(r.root)) : nothing
+    spec = reg === nothing ? nothing : get(reg, "spec", nothing)
     if spec == SPEC_1
         err!(
             r,
@@ -501,9 +511,12 @@ function validate(root)
         end
     end
     # The index is derived, so a disagreement is a fact about this tree, not a judgement call:
-    # `reindex!` settles it (§2.1).
-    for d in index_disagreements(r.root)
-        err!(r, registry_file(r.root), d * " — run `Archeion.reindex!`")
+    # `reindex!` settles it (§2.1). Skipped when `registry.toml` could not be read at all — there
+    # is nothing to disagree with, and asking would parse the same unparseable file again.
+    if reg !== nothing
+        for d in index_disagreements(r.root)
+            err!(r, registry_file(r.root), d * " — run `Archeion.reindex!`")
+        end
     end
     return (; errors=r.errors, warnings=r.warnings, summary)
 end
