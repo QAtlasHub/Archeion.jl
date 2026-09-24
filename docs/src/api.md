@@ -2,7 +2,7 @@
 CurrentModule = Archeion
 ```
 
-# API
+# API References
 
 What a caller needs, grouped by when they need it. Everything else in the module is an internal
 detail and may move between patch releases.
@@ -23,9 +23,11 @@ default_branch
 
 ```@docs
 new_binding
+registry_of
 deposit
 publish
 doc_fields
+anchors
 ```
 
 ## Checking and reading
@@ -63,4 +65,10 @@ provenance_from
 
 ```@docs
 main
+```
+
+## The module
+
+```@docs
+Archeion
 ```

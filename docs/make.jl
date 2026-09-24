@@ -39,8 +39,24 @@ makedocs(;
         prettyurls=get(ENV, "CI", "false") == "true",
         edit_link="main",
     ),
-    pages=["Archeion" => "index.md", "The format" => "spec.md", "API" => "api.md"],
-    checkdocs=:none,   # the internals carry docstrings too; the API page lists what is public
+    pages=[
+        "Archeion" => "index.md",
+        "How to use" => [
+            "Create a registry" => "guide/registry.md",
+            "Publish a result" => "guide/publish.md",
+            "Correct or withdraw" => "guide/correct.md",
+            "Everything else" => "guide/everything-else.md",
+        ],
+        "Architecture" => "architecture.md",
+        "The format" => "spec.md",
+        "API References" => "api.md",
+    ],
+    # `:public` rather than `:none`. The module declares fifteen `public` names beside its two
+    # exports, and `:none` let two of them — `registry_of` and `anchors` — fall off the API page
+    # without a word. `:exports` would not have caught it either, since both exports were listed.
+    # This makes the omission a build failure instead of something a reader discovers by not
+    # finding a function.
+    checkdocs=:public,
 )
 
 deploydocs(; repo="github.com/QAtlasHub/Archeion.jl", devbranch="main", push_preview=true)

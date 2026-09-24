@@ -69,8 +69,8 @@ making a mess.
 
 A conversion is not resumable: it renames directories one at a time, and a tree caught between the
 two formats is neither. So it is all or nothing, in two halves. Everything that can be known in
-advance — the identifiers, the slugs, the collisions among them, whether every file parses — is
-settled before the first rename. Whether the *result* validates can only be known afterwards, and
+advance — the identifiers, the slugs, the collisions among them, whether every project file and
+`record.toml` parses — is settled before the first rename. Whether the *result* validates can only be known afterwards, and
 if it does not the conversion is undone, which is why a registry under git must have nothing
 uncommitted before one starts: that clean tree is what makes undoing possible. A tree not under
 git has no undo, and is told so rather than left half converted in silence.
