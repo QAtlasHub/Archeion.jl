@@ -26,6 +26,17 @@ end
 
 write_toml(path, d) = open(io -> TOML.print(io, d; sorted=true), path, "w")
 
+# Put the tree back as it was before the conversion touched it. Only possible under git, which is
+# exactly why a conversion demands a clean working tree: `checkout` restores what was rewritten and
+# `clean` removes what was renamed into place, and between them nothing of the original is left
+# changed. Returns whether it could.
+function rollback!(root)
+    git(root, "rev-parse", "--git-dir"; ok=true) === nothing && return false
+    git(root, "checkout", "--", "."; ok=true)
+    git(root, "clean", "-qfd"; ok=true)
+    return true
+end
+
 # Under git, uncommitted work would be indistinguishable from what a failed conversion left.
 function isdirty(root)
     git(root, "rev-parse", "--git-dir"; ok=true) === nothing && return false
@@ -42,7 +53,9 @@ function current_title(recdir, fallback)
     isempty(revs) && return fallback
     entry = joinpath(recdir, "revisions", last(revs), "entry.toml")
     isfile(entry) || return fallback
-    title = getpath(TOML.parsefile(entry), "doc", "title")
+    d = readable(entry)
+    d === nothing && return fallback
+    title = getpath(d, "doc", "title")
     return title === nothing ? fallback : string(title)
 end
 
@@ -55,10 +68,12 @@ index is written. Refuses a tree that is not `registry/1`, so a second run says 
 making a mess.
 
 A conversion is not resumable: it renames directories one at a time, and a tree caught between the
-two formats is neither. So everything that can be known in advance — the identifiers, the slugs and
-the collisions among them — is settled before the first rename, and a registry under git must have
-nothing uncommitted, so that whatever survives a disk error is one `git checkout .` from where it
-started.
+two formats is neither. So it is all or nothing, in two halves. Everything that can be known in
+advance — the identifiers, the slugs, the collisions among them, whether every file parses — is
+settled before the first rename. Whether the *result* validates can only be known afterwards, and
+if it does not the conversion is undone, which is why a registry under git must have nothing
+uncommitted before one starts: that clean tree is what makes undoing possible. A tree not under
+git has no undo, and is told so rather than left half converted in silence.
 """
 function migrate!(root)
     spec = spec_of(root)
@@ -104,8 +119,27 @@ function migrate!(root)
 
     projects, records = length(plan.projects), length(plan.records)
     r = validate(root)
-    isempty(r.errors) ||
-        error("the converted registry does not validate:\n  " * join(r.errors, "\n  "))
+    if !isempty(r.errors)
+        # Everything knowable in advance is settled by `plan_migration`, but whether the *result*
+        # validates can only be known here — after every rename. Refusing at this point used to
+        # leave a fully converted tree behind while saying it had refused, which is not what
+        # all-or-nothing means. The clean working tree demanded above is what makes a conversion
+        # undoable, so it is undone.
+        undone = rollback!(root)
+        error(
+            "the converted registry does not validate, so the conversion was " *
+            (
+                if undone
+                    "undone"
+                else
+                    "left in place — this tree is not under git, so it is now part $SPEC_1 " *
+                    "and part $SPEC, and has to be repaired by hand"
+                end
+            ) *
+            ":\n  " *
+            join(r.errors, "\n  "),
+        )
+    end
     # `ids` is the conversion's one unrecoverable-by-guessing output: a binding lives in the
     # repository that renders the report, not in the registry, so nothing here can update it, and
     # whoever runs this needs to know which UUID replaced which identifier to do it themselves.
@@ -123,7 +157,9 @@ function plan_migration(root)
     for f in entries(pdir)
         endswith(f, ".toml") || continue
         path = joinpath(pdir, f)
-        d = TOML.parsefile(path)
+        d = readable(path)
+        d === nothing &&
+            error("$path does not parse; a conversion reads every file it converts")
         haskey(d, "id") || continue
         old_id = string(d["id"])
         haskey(ids, old_id) && error("`id` $old_id names more than one project")
@@ -160,7 +196,10 @@ function plan_migration(root)
             old_id = String(m[3])
             haskey(ids, old_id) && error("`id` $old_id names more than one record")
             ids[old_id] = new_uuid()
-            d = TOML.parsefile(joinpath(old_dir, "record.toml"))
+            d = readable(joinpath(old_dir, "record.toml"))
+            d === nothing && error(
+                "$old_dir/record.toml does not parse; a conversion reads every file it converts",
+            )
             string(get(d, "id", "")) == old_id ||
                 error("$old_dir/record.toml says `id` $(repr(get(d, "id", nothing)))")
             push!(records, (old_dir, joinpath(ydir, slug), d, slug))

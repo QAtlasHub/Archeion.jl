@@ -9,13 +9,6 @@ const INDEX_FILE = "registry.toml"
 
 registry_file(root) = joinpath(root, INDEX_FILE)
 
-function read_registry_toml(root)
-    path = registry_file(root)
-    return isfile(path) ? TOML.parsefile(path) : Dict{String,Any}()
-end
-
-spec_of(root) = get(read_registry_toml(root), "spec", nothing)
-
 # A file that is not TOML is not this function's to complain about — `validate` names it, and
 # `reindex!` is only ever run on a tree that validates. Skipping it keeps the scan from throwing
 # out of the middle of a check whose whole job is to report what is wrong.
@@ -26,6 +19,20 @@ function readable(path)
         return nothing
     end
 end
+
+function read_registry_toml(root)
+    path = registry_file(root)
+    isfile(path) || return Dict{String,Any}()
+    d = readable(path)
+    # Every caller of this is about to act on what the registry says it is, so a file that does not
+    # parse has to stop them by name. It used to come out as a bare `TOML.ParserError` from
+    # whichever of them asked first — `build`, `migrate!`, `deposit` — naming none of them and not
+    # the file either.
+    d === nothing && error("$path does not parse; a registry says what it is in this file")
+    return d
+end
+
+spec_of(root) = get(read_registry_toml(root), "spec", nothing)
 
 # Walk the tree and say what is in it: `uuid => (name, path)` per project and record. This is the
 # definition of the index; everything else compares against what this returns.
