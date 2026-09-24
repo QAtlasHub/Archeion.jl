@@ -1,6 +1,6 @@
 # migrate: a registry/1 tree becomes a registry/2 one, and no frozen revision is touched doing it.
 
-errors_of(root) = first(Archeion.validate(root)).errors
+errors_of(root) = Archeion.validate(root).errors
 
 @testset "migrate: identity moves into the files, the paths become names" begin
     root = v1_copy()

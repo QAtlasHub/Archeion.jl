@@ -140,8 +140,8 @@ end
         on_remote = tracked(remote, "master")
         @test occursin(theirs.rev, on_remote) && occursin(mine.rev, on_remote)
         # Both name the same parent, so the record is in conflict — said, not resolved by time.
-        r, summary = Archeion.validate(clone)
-        @test isempty(r.errors) && occursin("in conflict", only(summary))
+        r = Archeion.validate(clone)
+        @test isempty(r.errors) && occursin("in conflict", only(r.summary))
     end
 end
 
@@ -234,7 +234,7 @@ end
         # the second clone's push went through, and the index it pushed names both records
         index = read(joinpath(clone, "registry.toml"), String)
         @test all(id -> occursin(id, index), made)
-        @test isempty(first(Archeion.validate(clone)).errors)
+        @test isempty(Archeion.validate(clone).errors)
         @test isempty(readchomp(`git -C $clone status --porcelain --untracked-files=no`))
         @test isempty(Archeion.index_disagreements(clone))
     end

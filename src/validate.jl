@@ -451,6 +451,14 @@ function check_record(r::Report, recdir, year, projects, seen)
     return "$id  $(length(revinfo)) revision(s), $(length(events)) event(s), $state"
 end
 
+"""
+    validate(root) -> (; errors, warnings, summary)
+
+Check the registry at `root` against SPEC.md and say what is wrong with it. `errors` are the ways
+it does not satisfy the format and `warnings` the ways it is unusual but allowed; `summary` is one
+line per record — its identifier, how many revisions and events it holds, and which revision is
+current. A registry is valid when `errors` is empty; nothing here writes.
+"""
 function validate(root)
     r = Report(abspath(root))
     spec = spec_of(r.root)
@@ -494,5 +502,5 @@ function validate(root)
     for d in index_disagreements(r.root)
         err!(r, registry_file(r.root), d * " — run `Archeion.reindex!`")
     end
-    return r, summary
+    return (; errors=r.errors, warnings=r.warnings, summary)
 end

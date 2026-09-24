@@ -11,7 +11,7 @@
         @test isempty(
             readchomp(`git -C $root log --oneline --all -- $(relpath(d2.dir, root))`)
         )
-        @test isempty(first(Archeion.validate(root)).errors)   # the tree itself is fine
+        @test isempty(Archeion.validate(root).errors)   # the tree itself is fine
 
         # Without the check the next deposit names that orphan as its parent and commits it, and
         # one `git clean` later the registry cites a revision whose bytes are nowhere.
@@ -56,7 +56,7 @@ end
             "\n<a href=\"../../../../../../../../etc/passwd\">out</a>\n",
         )
         Archeion.write_sums(rev)
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
         e = attempt(() -> Archeion.build(root))
         @test e isa ErrorException && occursin("leaves the site", e.msg)
     end

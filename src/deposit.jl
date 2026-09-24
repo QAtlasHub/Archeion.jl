@@ -273,7 +273,7 @@ function deposit(
     reg = registry_of(binding)
     id = b["record"]
     check_settled(reg)
-    r0, _ = validate(reg)
+    r0 = validate(reg)
     isempty(r0.errors) || error(
         "the registry does not validate before depositing:\n  " * join(r0.errors, "\n  "),
     )
@@ -374,7 +374,7 @@ function deposit(
     )
     mv(incoming, final)
     reindex!(reg)                                     # the index follows the tree (§2.1)
-    r, _ = validate(reg)
+    r = validate(reg)
     if !isempty(r.errors)
         rm(final; recursive=true)
         new_record && rm(recdir; recursive=true)

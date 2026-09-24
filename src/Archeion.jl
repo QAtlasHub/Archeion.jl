@@ -149,13 +149,13 @@ function (@main)(args)
         end
         return 0
     elseif cmd == "validate"
-        r, summary = validate(root)
-        foreach(s -> println("  ", s), summary)
+        r = validate(root)
+        foreach(s -> println("  ", s), r.summary)
         foreach(w -> println("warning: ", w), r.warnings)
         foreach(e -> println("error: ", e), r.errors)
         println(
             if isempty(r.errors)
-                "ok: $(length(summary)) record(s)"
+                "ok: $(length(r.summary)) record(s)"
             else
                 "$(length(r.errors)) error(s)"
             end,

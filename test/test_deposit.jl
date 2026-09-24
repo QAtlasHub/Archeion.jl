@@ -14,7 +14,7 @@
         )
         @test read(joinpath(res.dir, "repro", "scripts", "run.jl"), String) ==
             "# the script that made it\n"
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
     end
 end
 
@@ -45,7 +45,7 @@ end
         )
         @test isfile(joinpath(res.dir, "gallery", "index.html"))
         @test isfile(joinpath(res.dir, "agent", "agent.json"))
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
     end
     with_git_fixture() do root, binding, src
         e = attempt(
@@ -67,9 +67,9 @@ end
 @testset "deposit" begin
     with_git_fixture() do root, binding, src
         res = deposit(binding; src..., doc=DOC, source_repo=root, push=false)
-        r, summary = Archeion.validate(root)
+        r = Archeion.validate(root)
         @test res.parents == [REV_NAME]
-        @test isempty(r.errors) && occursin("current $(res.rev)", only(summary))
+        @test isempty(r.errors) && occursin("current $(res.rev)", only(r.summary))
         changed = split(readchomp(`git -C $root show --name-only --format= HEAD`), '\n')
         @test commits(root) == 2 &&
             all(startswith(c, relpath(res.dir, root)) for c in changed)
@@ -119,7 +119,7 @@ end
         record = TOML.parsefile(joinpath(dirname(dirname(res.dir)), "record.toml"))
         @test record["kind"] == "note"
         @test TOML.parsefile(joinpath(res.dir, "entry.toml"))["id"]["kind"] == "note"
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
         site = joinpath(mktempdir(), "_site")
         Archeion.build(root, site)
         page = read(
@@ -141,8 +141,8 @@ end
         nb = joinpath(root, ".registry", "bindings", "second.toml")
         new_binding(nb; registry=root, project=PROJECT_UUID, slug="second-question")
         res = deposit(nb; src..., doc=DOC, source_repo=root, push=false)
-        r, summary = Archeion.validate(root)
-        @test isempty(r.errors) && length(summary) == 2 && res.parents == []
+        r = Archeion.validate(root)
+        @test isempty(r.errors) && length(r.summary) == 2 && res.parents == []
         @test isfile(joinpath(dirname(dirname(res.dir)), "record.toml"))
     end
 
@@ -198,7 +198,7 @@ end
             @test e isa ErrorException && occursin(says, e.msg)
             # and it was refused before anything was written outside the registry
             @test !ispath(joinpath(dirname(root), "elsewhere"))
-            @test isempty(first(Archeion.validate(root)).errors)
+            @test isempty(Archeion.validate(root).errors)
         end
     end
 end
@@ -215,7 +215,7 @@ end
         e = attempt(() -> deposit(second; src..., doc=DOC, source_repo=root, push=false))
         @test e isa ErrorException && occursin("already called logistic-map", e.msg)
         @test commits(root) == 1                          # nothing was committed
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
     end
 end
 
@@ -232,6 +232,6 @@ end
         # nothing of the registry's own is left uncommitted (the binding is this test's, and
         # in real use lives in the repository that renders the report, not in this one)
         @test isempty(readchomp(`git -C $root status --porcelain --untracked-files=no`))
-        @test isempty(first(Archeion.validate(root)).errors)
+        @test isempty(Archeion.validate(root).errors)
     end
 end
