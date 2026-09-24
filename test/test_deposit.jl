@@ -149,6 +149,9 @@ end
     with_git_fixture() do root, binding, src
         rec = joinpath(root, REC_REL)
         second_revision!(rec, joinpath(root, REV_REL); parent=false)
+        # committed, so that what refuses the deposit is the conflict and not the unsettled tree
+        run(`git -C $root add -A`)
+        run(`git -C $root -c user.name=t -c user.email=t@t commit -qm "a second head"`)
         n = commits(root)
         e = attempt(() -> deposit(binding; src..., doc=DOC, source_repo=root, push=false))
         @test e isa ErrorException && occursin("in conflict", e.msg) && commits(root) == n
