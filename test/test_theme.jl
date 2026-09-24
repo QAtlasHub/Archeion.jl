@@ -55,9 +55,21 @@ end
     # that the reports can be brought along: the site's copy of a revision gets a derived dark
     # layer (dark.jl), including revisions frozen years before any of this.
     @test occursin("prefers-color-scheme: dark", Archeion.CSS)
+    # Three states, not two: the system decides unless the reader has said otherwise, and the
+    # query steps aside for an explicit light so one page can be held bright on a dark desktop.
+    @test occursin(""":root:not([data-theme="light"]){""", Archeion.CSS)
+    @test occursin(""":root[data-theme="dark"]{""", Archeion.CSS)
+    # and the two dark blocks are one block printed twice, so they cannot drift apart
+    darks = [
+        m[1] for m in eachmatch(
+            r":root(?::not\(\[data-theme=\"light\"\]\)|\[data-theme=\"dark\"\])\{(.*?)\}"s,
+            Archeion.CSS,
+        )
+    ]
+    @test length(darks) == 2 && darks[1] == darks[2]
     # every token the light palette defines is redefined after dark, and with a different value
     light = match(r":root\{(.*?)\}"s, Archeion.CSS)[1]
-    dark = match(r"prefers-color-scheme: dark\).*?:root\{(.*?)\}"s, Archeion.CSS)[1]
+    dark = first(darks)
     names(block) = Set(m[1] for m in eachmatch(r"(--[a-z0-9-]+):", block))
     @test names(light) == names(dark)
     for n in names(light)
@@ -72,7 +84,42 @@ end
 @testset "theme: every colour the site draws with comes from a token" begin
     # Hard-coded colours are how a palette drifts. `#fff` behind a figure is the exception: a
     # figure is drawn on white whatever the page around it is.
-    body = replace(Archeion.CSS, r":root\{[^}]*\}" => "")
+    # The control's own block is the other exception, and it earns it: the same rules are injected
+    # into frozen reports whose palette predates the tokens, so every colour in it is the fallback
+    # of a `var(--x, …)` — what a report that never heard of `--mut` draws the button with.
+    body = replace(
+        replace(Archeion.CSS, r":root[^{]*\{[^}]*\}" => ""), Archeion.APPEARANCE_CSS => ""
+    )
     hard = [m.match for m in eachmatch(r"#[0-9a-fA-F]{3,6}", body)]
     @test all(==("#fff"), hard)
+    for m in eachmatch(r"#[0-9a-fA-F]{3,6}", Archeion.APPEARANCE_CSS)
+        @test occursin(
+            Regex("var\\(--[a-z0-9-]+,\\s*\\Q$(m.match)\\E\\)"), Archeion.APPEARANCE_CSS
+        )
+    end
+end
+
+@testset "theme: one site, so one control and one memory" begin
+    # A reader who turns the lights down on a record page has not asked to have them turned back
+    # up when they follow the link into the report. The two packages cannot share code — a registry
+    # has to build without a plotting stack — so they share the strings, and this is what notices
+    # when one of them moves.
+    @test Archeion.APPEARANCE_KEY == Pinax._APPEARANCE_KEY == "pinax-appearance"
+    @test occursin("pinax-appearance", Archeion.APPEARANCE_BUTTON)
+    @test occursin("pinax-appearance", Pinax._APPEARANCE_BUTTON)
+
+    # the same three states in the same order, or the button means two things on one site
+    cycle = "v===\"system\"?\"light\":v===\"light\"?\"dark\":\"system\""
+    @test occursin(cycle, Archeion.appearance_foot("system"))
+    @test occursin(cycle, Pinax._appearance_foot("system"))
+
+    # and one dark palette. Pinax names fourteen; Archeion names those and the graph's five steps.
+    pinax_dark = Dict(
+        m[1] => m[2] for
+        m in eachmatch(r"--([a-z0-9-]+):\s*(#[0-9a-fA-F]{3,6})", Pinax._DARK_TOKENS)
+    )
+    @test length(pinax_dark) == 14
+    for (name, value) in pinax_dark
+        @test Archeion.DARK[name] == value
+    end
 end

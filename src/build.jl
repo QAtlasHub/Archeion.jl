@@ -87,6 +87,32 @@ comment_text(e) = something(getpath(e, "body", "text"), get(e, "text", nothing),
 
 # ── pages ─────────────────────────────────────────────────────────────────────────────────────
 
+# The dark palette as one declaration list, written once and used twice by `CSS` below: the media
+# query and the explicit choice have to say the same thing, and two copies would not stay that way.
+const DARK_TOKENS =
+    join(
+        (
+            "--$k:$(DARK[k])" for k in (
+                "bg",
+                "fg",
+                "mut",
+                "line",
+                "card",
+                "acc",
+                "soft",
+                "warn",
+                "bad",
+                "ok",
+                "l0",
+                "l1",
+                "l2",
+                "l3",
+                "l4",
+            )
+        ),
+        ";",
+    ) * ";color-scheme:dark"
+
 const CSS = """
 /* The catalogue and the reports it links to are one thing to read, so they are one palette: these
    are Pinax's gallery defaults (its `src/themes/gallery.jl`), named here because this package
@@ -100,7 +126,8 @@ const CSS = """
 :root{--bg:#fafafa;--fg:#24292f;--mut:#57606a;--line:#e2e5e9;--card:#fff;--acc:#0366d6;
 --soft:#f6f8fa;--warn:#9a6700;--bad:#a40e26;--ok:#1a7f37;
 /* the contribution graph's five steps, empty to busiest */
---l0:#ebedf0;--l1:#9be9a8;--l2:#40c463;--l3:#30a14e;--l4:#216e39}
+--l0:#ebedf0;--l1:#9be9a8;--l2:#40c463;--l3:#30a14e;--l4:#216e39;
+color-scheme:light}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
 font:16px/1.5 system-ui,sans-serif}
 main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}a{color:var(--acc)}
@@ -163,10 +190,15 @@ header.site nav{order:3;flex-basis:100%;display:none;flex-direction:column;gap:6
 #m:checked~nav{display:flex}}
 /* The same palette after dark, and nothing else: every rule above already names a token, so
    this is the whole of it. Values are `Archeion.DARK` (dark.jl), which is also what the derived
-   layer gives a report frozen before any of this existed. */
+   layer gives a report frozen before any of this existed.
+
+   Three states, not two. The reader's system decides unless they have said otherwise, and
+   `data-theme` on <html> is that saying (appearance.jl). The query steps aside for an explicit
+   light, so a reader on a dark desktop can still hold one page bright. */
 @media (prefers-color-scheme: dark){
-:root{$(join(("--$k:$(DARK[k])" for k in
-("bg","fg","mut","line","card","acc","soft","warn","bad","ok","l0","l1","l2","l3","l4")), ";"))}}
+:root:not([data-theme="light"]){$DARK_TOKENS}}
+:root[data-theme="dark"]{$DARK_TOKENS}
+$APPEARANCE_CSS
 """
 
 # Everything the search needs is already in the page, so it works from a file:// window as well as
@@ -204,8 +236,22 @@ function site_config(root, fallback)
         title=string(get(site, "title", get(reg, "name", fallback))),
         tagline=string(get(site, "tagline", "")),
         footer=string(get(site, "footer", "")),
+        appearance=appearance_of(site),
         links=filter(l -> !isempty(l.url), links),
     )
+end
+
+# The colour scheme a reader who has not chosen one gets, from `[site] appearance`. A registry that
+# says nothing, or says something this does not understand, follows the reader's system — a
+# misspelling in a config file is not a reason to hold a whole site in the dark.
+function appearance_of(site)
+    a = lowercase(strip(string(get(site, "appearance", "system"))))
+    a in APPEARANCES && return a
+    isempty(a) ||
+        a == "system" ||
+        @warn "registry.toml [site] appearance is not one of $(join(APPEARANCES, ", ")); \
+               the site will follow the reader's system" appearance = a
+    return "system"
 end
 
 # The banner every page wears: the registry's name, what it says it is, and its links. The menu is
@@ -240,10 +286,12 @@ function footer(site)
 end
 
 function page(title, body; site, up=".")
+    # The script comes before the stylesheet, so a reader whose answer is dark never watches the
+    # page turn white on its way there.
     return """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>$(html_escape(title))</title>
-<style>$CSS</style></head><body>$(header(site, up))
-<main>$body</main>$(footer(site))</body></html>
+$(appearance_head(site.appearance))<style>$CSS</style></head><body>$APPEARANCE_BUTTON$(header(site, up))
+<main>$body</main>$(footer(site))$(appearance_foot(site.appearance))</body></html>
 """
 end
 
@@ -667,7 +715,7 @@ end
 # per revision ever deposited. The summary, `provenance.toml`, is served and links nowhere.
 const SITE_SKIP = ("provenance", "repro")
 
-function copy_revision(src, dest)
+function copy_revision(src, dest, appearance="system")
     mkpath(dest)
     for name in readdir(src)
         name in SITE_SKIP && isdir(joinpath(src, name)) && continue
@@ -675,7 +723,7 @@ function copy_revision(src, dest)
     end
     # The copy may carry what the revision cannot: a revision is frozen under its own SHA256SUMS,
     # and most of them were rendered before there was a dark mode to render (dark.jl).
-    return darken_site_copy!(dest)
+    return darken_site_copy!(dest, appearance)
 end
 
 """
@@ -684,7 +732,8 @@ end
 Render the registry at `root` as a static site in `out`, and say what was written: how many
 `records`, how many `bytes`, and `dark`, the tally of stylesheets that got a dark layer
 (`dark`, `already`, `colourless`, `unknown` — `unknown` is the count that is not supposed to be
-above zero, and each one is warned about by name).
+above zero, and each one is warned about by name — plus `controls`, the report pages that came
+away switchable).
 
 The site is **derived**: `out` is replaced on every build, never committed, and every link in it is
 relative, so it reads from a sub-path, over SSH or from `file://`. Refuses a registry that does not
@@ -706,17 +755,20 @@ function build(root, out=joinpath(root, "_site"))
     mkpath(out)
     write(joinpath(out, MARKER), "written by tools/build.jl; replaced on every build\n")
     projects, records = read_registry(root)
-    dark = (; dark=0, already=0, colourless=0, unknown=0)
+    dark = (; dark=0, already=0, colourless=0, unknown=0, controls=0)
     for rec in records
         dest = joinpath(out, rec.rel)
         mkpath(joinpath(dest, "revisions"))
         for rev in rec.revs
-            d = copy_revision(rev.dir, joinpath(dest, "revisions", rev.name))
+            d = copy_revision(
+                rev.dir, joinpath(dest, "revisions", rev.name), site.appearance
+            )
             dark = (;
                 dark=dark.dark + d.dark,
                 already=dark.already + d.already,
                 colourless=dark.colourless + d.colourless,
                 unknown=dark.unknown + d.unknown,
+                controls=dark.controls + d.controls,
             )
         end
         write(joinpath(dest, "index.html"), record_page(site, projects, rec))

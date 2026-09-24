@@ -1,30 +1,15 @@
 # dark: the site is derived, so the site's copy of a frozen revision may be darkened. The
 # revision may not, and this is mostly about proving that it is not.
 
-const LIGHT_SHEET = """
-body{background:#fafafa;color:#24292f}
-a{color:#0366d6}
-section.section{background:#fff;border:1px solid #e2e5e9}
-figcaption{color:#444}
-.pinax-verdict-fail{background:#ffebe9;border:1px solid #cf222e;color:#a40e26}
-figure iframe.pinax-pdf{background:#fff}
-"""
-
-# Add a stylesheet to a copied fixture's revision and keep SHA256SUMS true, so the registry it
-# lands in is one `validate` accepts.
-function with_stylesheet!(rev, css=LIGHT_SHEET)
-    rel = joinpath("gallery", "style.css")
-    write(joinpath(rev, rel), css)
-    Archeion.write_sums(rev)
-    return joinpath(rev, rel)
-end
-
 layer_of(css) = Archeion.darkened(css).layer
 
 @testset "dark: a light stylesheet gains a layer, and keeps the one it had" begin
     r = Archeion.darkened(LIGHT_SHEET)
     @test r.why === :ok
-    @test occursin("@media (prefers-color-scheme: dark)", r.layer)
+    # The layer is the stylesheet again — same rules, same selectors, no query wrapped round it.
+    # *When* it applies is the linking page's `media` (appearance.jl), because an attribute can be
+    # rewritten by the control and a query baked in here could not.
+    @test !occursin("@media (prefers-color-scheme: dark)", r.layer)
     @test occursin("background:#0d1117", r.layer) && occursin("color:#e6edf3", r.layer)
     @test occursin("color:#4493f8", r.layer)                # the link
     @test occursin("#30363d", r.layer)                      # the hairline
@@ -91,12 +76,22 @@ end
         res = Archeion.build(root)
         @test res.dark.dark == 2 && res.dark.unknown == 0
 
+        @test res.dark.controls == 2                            # both pages came away switchable
+
         for (r, sheet) in sheets
-            copied = joinpath(
-                root, "_site", REC_REL, "revisions", basename(r), "gallery", "style.css"
+            gallery = joinpath(root, "_site", REC_REL, "revisions", basename(r), "gallery")
+            copied = joinpath(gallery, "style.css")
+            # the copy of the sheet is the sheet; the dark layer is a file beside it
+            @test read(copied, String) == before[r]
+            layer = read(joinpath(gallery, "style.dark.css"), String)
+            @test occursin("#0d1117", layer) && !occursin("#fafafa", layer)
+            # …which the page links, gated by a media the control can rewrite
+            html = read(joinpath(gallery, "index.html"), String)
+            @test occursin(
+                """<link rel="stylesheet" href="style.dark.css" media="(prefers-color-scheme: dark)" data-appearance-dark>""",
+                html,
             )
-            @test occursin("prefers-color-scheme: dark", read(copied, String))
-            @test startswith(read(copied, String), before[r])   # the light half is still first
+            @test occursin("pinax-appearance", html)
             # what the registry holds is what it held: byte for byte, digest included
             @test read(sheet, String) == before[r]
             @test sums_verify(r)
@@ -114,12 +109,8 @@ end
 
         n = Archeion.darken_site_copy!(joinpath(rev, "gallery"))
         @test n.dark == 1                                    # ours, and only ours
-        @test occursin(
-            "prefers-color-scheme", read(joinpath(rev, "gallery", "style.css"), String)
-        )
-        @test !occursin(
-            "prefers-color-scheme", read(joinpath(assets, "katex.min.css"), String)
-        )
+        @test isfile(joinpath(rev, "gallery", "style.dark.css"))
+        @test !isfile(joinpath(assets, "katex.min.dark.css"))
     end
     # `assets` is a directory, not a substring: a stylesheet of ours is not theirs for spelling
     @test Archeion.is_own_stylesheet(joinpath("gallery", "style.css"))

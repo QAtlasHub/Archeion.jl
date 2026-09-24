@@ -27,6 +27,7 @@ using TOML
 include("ids.jl")
 include("index.jl")
 include("validate.jl")
+include("appearance.jl")
 include("dark.jl")
 include("build.jl")
 include("provenance.jl")

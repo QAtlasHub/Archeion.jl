@@ -138,3 +138,38 @@ const DOC = (;
     tags=["example"],
     Archeion.anchors(["logistic", "orbits", "orbits_fig1"])...,
 )
+
+# ── a report's stylesheet ──────────────────────────────────────────────────────────────────────
+#
+# Shared rather than kept in `test_dark.jl`: the shards run the files apart, so a fixture two of
+# them need has to be here (runtests.jl).
+
+const LIGHT_SHEET = """
+body{background:#fafafa;color:#24292f}
+a{color:#0366d6}
+section.section{background:#fff;border:1px solid #e2e5e9}
+figcaption{color:#444}
+.pinax-verdict-fail{background:#ffebe9;border:1px solid #cf222e;color:#a40e26}
+figure iframe.pinax-pdf{background:#fff}
+"""
+
+# Add a stylesheet to a copied fixture's revision and keep SHA256SUMS true, so the registry it
+# lands in is one `validate` accepts.
+function with_stylesheet!(rev, css=LIGHT_SHEET)
+    rel = joinpath("gallery", "style.css")
+    write(joinpath(rev, rel), css)
+    # …and the page links it. A report is a page and its stylesheet, and the control reaches the
+    # second through the first: a sheet nothing links is a sheet nothing can switch.
+    page = joinpath(rev, "gallery", "index.html")
+    if isfile(page)
+        html = read(page, String)
+        occursin("style.css", html) || write(
+            page,
+            replace(
+                html, "</head>" => """<link rel="stylesheet" href="style.css"></head>"""
+            ),
+        )
+    end
+    Archeion.write_sums(rev)
+    return joinpath(rev, rel)
+end
