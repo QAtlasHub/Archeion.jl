@@ -4,8 +4,8 @@ CurrentModule = Archeion
 
 # Create a registry
 
-A registry is a git repository. This makes one, sets up the checks that keep it honest, and
-publishes it as a site.
+A registry is a directory tree. Making one does not involve git, GitHub, or a server — those come
+in later, and only if you want them, depending on how the registry will be read.
 
 ## 1. The tree
 
@@ -64,7 +64,23 @@ Archeion.validate("path/to/registry")     # -> ok: 0 record(s)
 the tree it names the command that fixes it. You will use it constantly; it is cheap and it never
 writes.
 
-## 3. The CI
+## 3. How will it be read?
+
+This is the decision that determines whether you need anything beyond the directory. Three
+answers, and the registry itself is identical in all three:
+
+| | what it needs | when |
+|---|---|---|
+| **you, on this machine** | nothing further | while the work is still yours |
+| **people you can reach over SSH** | a machine that rebuilds the site into a directory | a private registry, read through Tailscale or an SSH file browser |
+| **anyone with the URL** | a GitHub repository and Pages | a public registry |
+
+The rest of this page is the third one, because it needs the most setup. For the second, skip to
+[the private variant](@ref A-registry-that-must-not-be-published). For the first, there is nothing
+to do: [`build`](@ref) writes `_site/`, every link in it is relative, and a browser opens it from
+`file://`.
+
+## 4. The CI (if it lives on GitHub)
 
 [`setup_pages`](@ref) writes the workflows. `init` has already called it unless you asked it not
 to, and you can call it again to refresh them after upgrading Archeion:
@@ -83,33 +99,46 @@ The Archeion version is pinned into the workflows — to the version that wrote 
 the version `registry.toml`'s `implementation` field should name. Re-run `setup_pages` after an
 upgrade so the two agree; `written` and `skipped` tell you which files it touched.
 
-!!! warning "A private repository's Pages site is public"
-    On every plan but Enterprise Cloud, GitHub Pages serves a site to anyone with the URL whether
-    or not the repository is private. For a registry that must not be readable, do not publish it:
+### A registry that must not be published
 
-    ```julia
-    Archeion.setup_pages("path/to/registry";
-                         runner = "self-hosted",
-                         site   = "/srv/registry-site")
-    ```
+On every plan but Enterprise Cloud, GitHub Pages serves a site to anyone with the URL whether or
+not the repository is private. So for a registry that must not be readable, do not publish it:
 
-    That writes `site.yml` instead of `pages.yml`. The site is rebuilt into that directory on the
-    machine `runner` names, on every push, and read from there over SSH — through Tailscale, an
-    SSH file browser, or any other way you already reach that filesystem. Nothing is published and
-    no URL exists to leak.
-
-    It is a real http origin rather than `file://`, which matters for anything in a report that a
-    browser treats as cross-origin.
-
-## 4. Commit
-
-```console
-$ git add -A && git commit -m "the registry"
+```julia
+Archeion.setup_pages("path/to/registry";
+                     runner = "self-hosted",
+                     site   = "/srv/registry-site")
 ```
 
-This matters more than it looks. Every writer in Archeion refuses to run against a registry with
-uncommitted content of its own, because a half-written state is what the next deposit would build
-on. The habit costs nothing now and saves a confusing refusal later.
+That writes `site.yml` instead of `pages.yml`. The site is rebuilt into that directory on the
+machine `runner` names, on every push, and read from there over SSH — through Tailscale, an SSH
+file browser, or any other way you already reach that filesystem. Nothing is published and no URL
+exists to leak.
+
+It is also a real http origin rather than `file://`, which matters for anything in a report that
+a browser treats as cross-origin.
+
+## 5. Where git comes in
+
+Depositing is the one thing that needs it. [`deposit`](@ref) commits each revision as it lands, so
+**the registry must be a git repository by the time you publish a result into it** — and so must
+the repository that renders the report, because a revision cites the commit that produced it.
+
+Measured, on a registry with no `.git` at all:
+
+| | |
+|---|---|
+| `init`, `reindex!`, `validate`, `build` | all work |
+| `deposit` | fails, at `git add`, after the revision is already on disk |
+
+So `git init` before your first deposit, not after:
+
+```console
+$ git init && git add -A && git commit -m "the registry"
+```
+
+And keep committing. Every writer refuses to run against a registry with uncommitted content of
+its own, because a half-written state is what the next deposit would build on.
 
 ## Then
 

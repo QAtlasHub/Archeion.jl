@@ -85,8 +85,18 @@ UUID in the registry and works out for itself whether it is creating the record 
 Parents default to the record's current head, so re-running your script links the new answer to
 the one before it without being told.
 
-If anything fails, the registry is left as it was found. There is no half-deposited state to clean
-up and nothing to undo by hand.
+If the revision turns out not to validate, it is taken back out and the index rewritten — you are
+left where you started.
+
+!!! note "What `deposit` needs from git"
+    It commits each revision as it lands, so **both** repositories must be git repositories: the
+    registry, and the one rendering the report (with at least one commit, because a revision cites
+    the commit that produced it).
+
+    The undo covers the checks. It does not cover git itself: measured on a registry with no
+    `.git`, `deposit` fails at `git add` — *after* the revision has been moved into place. The
+    revision is complete and valid, it simply is not committed. If a deposit reports a git error,
+    look at the registry before re-running it.
 
 ## One call instead of two
 
