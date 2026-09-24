@@ -28,6 +28,11 @@ title = "$title"
 tagline = "$tagline"
 footer = ""
 
+# The colour scheme a reader gets before they have chosen one. Left out, the site follows their
+# system; a reader's own choice is remembered and outranks this either way. Reports frozen before
+# there was a switch get one too — the site's copy of each carries a derived dark layer.
+# appearance = "dark"                # "system" (the default) | "light" | "dark"
+
 # Links for the banner, and for the menu on a narrow screen. A URL with a scheme opens out of the
 # site; anything else is a path inside it.
 # [[site.links]]

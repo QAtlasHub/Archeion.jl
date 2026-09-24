@@ -76,6 +76,14 @@ end
     @test Archeion.build(root).records == 0                    # and it builds
     @test occursin(">Lab</a>", read(joinpath(root, "_site", "index.html"), String))
 
+    # Every `[site]` key the builder reads is named in the file it writes, set or commented. A
+    # setting nobody is told about is a setting nobody uses: `appearance` shipped working and
+    # undiscoverable, because `init`'s template was written before it existed.
+    written = read(joinpath(root, "registry.toml"), String)
+    for key in ("title", "tagline", "footer", "site.links", "appearance")
+        @test occursin(key, written)
+    end
+
     e = attempt(() -> Archeion.init(root))                     # never over an existing registry
     @test e isa ErrorException && occursin("already holds", e.msg)
     rm(root; recursive=true)
