@@ -409,18 +409,18 @@ function deposit(
     )
 end
 
-"""
-    anchors(ids; auto = r"_(fig|tbl)\\d+\$") -> (; stable, positional)
-
-Split anchor ids into those that keep their meaning across revisions and those Pinax numbered by
-position (`<section>_fig<N>`, `<section>_tbl<N>`), which point elsewhere once a figure is inserted.
-"""
 # The numbering Pinax gives a figure or table with no explicit id. Named here because it is a
 # renderer's convention rather than a fact about registries, and kept as the default because a
 # document written by hand follows it too — but the Pinax extension passes it explicitly, so a
 # change to Pinax's numbering is a change beside Pinax and not a silent misreading here.
 const AUTO_NUMBERED = r"_(fig|tbl)\d+$"
 
+"""
+    anchors(ids; auto = r"_(fig|tbl)\\d+\$") -> (; stable, positional)
+
+Split anchor ids into those that keep their meaning across revisions and those Pinax numbered by
+position (`<section>_fig<N>`, `<section>_tbl<N>`), which point elsewhere once a figure is inserted.
+"""
 function anchors(ids; auto=AUTO_NUMBERED)
     ids = unique(string.(ids))
     return (;
