@@ -1,9 +1,22 @@
 # Archeion.jl
 
+[![docs: dev](https://img.shields.io/badge/docs-dev-purple.svg)](https://qatlashub.github.io/Archeion.jl/dev/)
+[![Julia](https://img.shields.io/badge/julia-v1.12+-9558b2.svg)](https://julialang.org)
+[![Code Style: Blue](https://img.shields.io/badge/Code%20Style-Blue-4495d1.svg)](https://github.com/invenia/BlueStyle)
+
+[![codecov](https://codecov.io/gh/QAtlasHub/Archeion.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/QAtlasHub/Archeion.jl)
+[![Build Status](https://github.com/QAtlasHub/Archeion.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/QAtlasHub/Archeion.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![registry format](https://img.shields.io/badge/registry-%2F2-1a7f37.svg)](SPEC.md)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A registry of rendered research results: plain files in a git repository, one directory per
 record, one frozen directory per revision, and nothing that has to be running for them to be read.
 The format is [`SPEC.md`](SPEC.md) (`spec = "registry/2"`, stable). This package is one
 implementation of it and depends on the standard library only.
+
+**What it is, which registries it supports, and how to deploy a result into one** are one page in
+the [documentation](https://qatlashub.github.io/Archeion.jl/dev/).
 
 ```julia
 using Archeion
