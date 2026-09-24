@@ -9,14 +9,17 @@
     sync!(reg)
 
 Bring the registry clone to its remote before anything is validated or written: a deposit checks
-the state it is about to add to, so that state must be the shared one. Refuses a dirty working
-tree, and a history that is not a fast-forward of its remote (a rebase is the caller's call, not
-this function's). A clone with no remote, or a remote that cannot be reached, is left alone with a
-warning: depositing offline is normal.
+the state it is about to add to, so that state must be the shared one. Refuses a registry whose own
+content is uncommitted (`check_settled`, the same rule `deposit` applies), and a history that is not
+a fast-forward of its remote (a rebase is the caller's call, not this function's). A clone with no
+remote, or a remote that cannot be reached, is left alone with a warning: depositing offline is
+normal.
 """
 function sync!(reg)
-    isempty(git(reg, "status", "--porcelain")) ||
-        error("$reg has uncommitted changes; commit or clean them before depositing")
+    # The registry's own content, not every file beside it. This used to refuse on any untracked
+    # file at all, which is why `publish` — the call every study makes — had never been tested:
+    # no fixture could get past it.
+    check_settled(reg)
     branch = git(reg, "rev-parse", "--abbrev-ref", "HEAD")
     upstream = git(
         reg, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"; ok=true
