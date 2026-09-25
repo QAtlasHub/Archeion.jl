@@ -458,7 +458,8 @@ function deposit(
     # *after* the revision was already in place, which left it written, valid, and reported as a
     # failure. So the commit is the part that is skipped, and `commit === nothing` says it was.
     path = relpath(new_record ? recdir : final, reg)
-    committed = if under_git(reg)
+    committed = under_git(reg)
+    if committed
         git(reg, "add", "--", path, INDEX_FILE)
         git(
             reg,
@@ -470,14 +471,12 @@ function deposit(
             path,
             INDEX_FILE,
         )
-        git(reg, "rev-parse", "HEAD")
     else
         @warn "$reg is not a git repository: the revision is written and validates, but nothing " *
             "was committed, so nothing records when it arrived or what it was added to"
-        nothing
     end
     pushed = false
-    if push && committed !== nothing
+    if push && committed
         if git(reg, "push", "-q"; ok=true) === nothing
             rebase_onto_remote!(reg)                      # someone else deposited meanwhile
             git(reg, "push", "-q")
@@ -489,7 +488,10 @@ function deposit(
         rev,
         parents=entry["parents"],
         dir=final,
-        commit=committed,
+        # Read after the push, not after the commit: a rejected first push goes through
+        # `rebase_onto_remote!`, which rewrites it, and the SHA a caller is handed has to be the
+        # one that actually reached the remote.
+        commit=committed ? git(reg, "rev-parse", "HEAD") : nothing,
         pushed,
         dirty=src === nothing ? nothing : src["repo"][1]["dirty"],
     )

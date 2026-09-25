@@ -298,3 +298,38 @@ end
     @test !(e isa ErrorException && occursin("nothing to push", something(e.msg, "")))
     rm(root; recursive=true)
 end
+
+@testset "deposit: the commit it reports is the one that reached the remote" begin
+    # `rebase_onto_remote!` runs when the first push is rejected, and a rebase writes new commit
+    # objects. Reading HEAD before the push — which a refactor briefly did — hands the caller a
+    # SHA that is no longer the branch tip and was never pushed.
+    with_git_fixture() do root, binding, src
+        bare = mktempdir()
+        run(pipeline(`git init -q --bare $bare`; stdout=devnull, stderr=devnull))
+        for c in (`remote add origin $bare`, `push -q -u origin HEAD`)
+            run(pipeline(`git -C $root $c`; stdout=devnull, stderr=devnull))
+        end
+
+        # somebody else deposits first: the remote moves ahead of our clone
+        other = mktempdir()
+        run(pipeline(`git clone -q $bare $other`; stdout=devnull, stderr=devnull))
+        write(joinpath(other, "THEIRS.md"), "a commit we do not have\n")
+        for c in (`add -A`, `-c user.name=t -c user.email=t@t commit -qm theirs`, `push -q`)
+            run(pipeline(`git -C $other $c`; stdout=devnull, stderr=devnull))
+        end
+
+        r = deposit(
+            binding;
+            gallery=src.gallery,
+            agent=src.agent,
+            source_repo=root,
+            doc=DOC,
+            push=true,
+        )
+        @test r.pushed
+        head = readchomp(`git -C $root rev-parse HEAD`)
+        remote_head = readchomp(`git -C $bare rev-parse HEAD`)
+        @test r.commit == head                 # the branch tip after the rebase
+        @test r.commit == remote_head          # and what the remote actually has
+    end
+end
