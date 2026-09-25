@@ -14,6 +14,12 @@ const SKIP = Set([".pinax-manifest.toml"])                        # render-cache
 utcnow() = floor(now(Dates.UTC), Second)
 
 function git(dir, args...; ok=false)
+    # `ignorestatus` forgives a nonzero exit; it does nothing about a process that cannot be
+    # spawned at all, which is what happens when there is no `git` on PATH — `run` throws a bare
+    # `IOError` naming neither the registry nor the operation. Checked once, here, because every
+    # other git call in the package goes through this function.
+    Sys.which("git") === nothing &&
+        error("no `git` on PATH, so `git $(join(args, ' '))` cannot run in $dir")
     out = IOBuffer()
     err = IOBuffer()
     proc = run(pipeline(ignorestatus(`git -C $dir $args`); stdout=out, stderr=err))
@@ -262,6 +268,10 @@ revision back out if that fails), then commit only that path and push.
 A registry that is not under git still gets its revision: what makes a revision what it is holds
 of a directory, and `validate` has just agreed. The commit is what is skipped, `commit` comes back
 as `nothing` to say so, and nothing is pushed.
+
+That holds of `deposit` itself. It does not extend through [`publish`](@ref), which syncs with a
+remote and pushes — neither of which means anything without git — so `publish` refuses such a
+registry up front and says to use `deposit`.
 
 `doc` carries what the document model knows: `title`, `status` ("trial"/"final"), anchors split
 into `stable` and `positional` (written as `anchors.local`), and optionally `tags`, `question`,

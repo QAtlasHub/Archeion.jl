@@ -273,3 +273,28 @@ end
         @test isempty(Archeion.validate(root).errors)     # the registry is still valid
     end
 end
+
+@testset "deposit: what a non-git registry does NOT get" begin
+    # The leniency is `deposit`'s, and it stops there. `publish` syncs with a remote and pushes,
+    # neither of which means anything without git — so it refuses at the front door rather than
+    # failing three calls later inside `git rev-parse`, which is what it used to do.
+    root = mktempdir()
+    Archeion.init(root; name="t", pages=false)
+    e = attempt(() -> Archeion.sync!(root))
+    @test e isa ErrorException
+    @test occursin("nothing to sync it with", e.msg)
+    @test occursin("`deposit` will still write a revision", e.msg)
+
+    for r in (:pr, :push)
+        e = attempt(
+            () -> Archeion.publish_revision!(root, "20260101T000000Z-aaaa", "t"; remote=r)
+        )
+        @test e isa ErrorException && occursin("nothing to push", e.msg)
+    end
+    # …and the one mode that claims no remote is allowed through
+    e = attempt(
+        () -> Archeion.publish_revision!(root, "20260101T000000Z-aaaa", "t"; remote=:local)
+    )
+    @test !(e isa ErrorException && occursin("nothing to push", something(e.msg, "")))
+    rm(root; recursive=true)
+end

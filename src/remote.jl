@@ -20,6 +20,14 @@ function sync!(reg)
     # file at all, which is why `publish` — the call every study makes — had never been tested:
     # no fixture could get past it.
     check_settled(reg)
+    # Everything below this line is about a remote, and a directory that is not a git repository
+    # has none. `deposit` can still write a revision into one — the files and their digests do not
+    # need git — but syncing and pushing cannot mean anything, so this says so once instead of
+    # failing three lines later inside `git rev-parse` with no mention of what was wrong.
+    under_git(reg) || error(
+        "$reg is not a git repository, so there is nothing to sync it with. `deposit` will " *
+        "still write a revision into it; `publish` needs a clone with a remote.",
+    )
     branch = git(reg, "rev-parse", "--abbrev-ref", "HEAD")
     upstream = git(
         reg, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"; ok=true
@@ -124,6 +132,12 @@ Returns what happened — `pushed`, the `branch`, and the `pr` URL when there is
 function publish_revision!(reg, rev, title; remote::Symbol=:pr, gh="gh")
     remote in (:pr, :push, :local) ||
         error("remote must be :pr, :push or :local (got $(repr(remote)))")
+    remote === :local ||
+        under_git(reg) ||
+        error(
+            "$reg is not a git repository, so `remote = $(repr(remote))` has nothing to push " *
+            "to; the revision is already written, and `remote = :local` is what says so.",
+        )
     remote === :local && return (; pushed=false, branch=nothing, pr=nothing)
     if remote === :push
         if git(reg, "push", "--quiet"; ok=true) === nothing
