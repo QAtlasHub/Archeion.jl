@@ -135,7 +135,9 @@ function publish_revision!(reg, rev, title; remote::Symbol=:pr, gh="gh")
         )
     end
     branch = deposit_branch(rev)
-    git(reg, "push", "--quiet", "--set-upstream", "origin", "HEAD:refs/heads/$branch")
+    # No `--set-upstream`: that would point this clone's own branch at the deposit branch, and the
+    # next `sync!` would pull from a branch that is merged and gone rather than from the default.
+    git(reg, "push", "--quiet", "origin", "HEAD:refs/heads/$branch")
     return (; pushed=true, branch, pr=open_pull_request(reg, branch, title; gh=gh))
 end
 

@@ -192,6 +192,10 @@ end
         @test occursin(basename(res.dir), tracked(remote, "deposit/$(res.rev)"))
         # master is untouched: the revision is proposed, not published
         @test !occursin(basename(res.dir), tracked(remote, "master"))
+        # and this clone still follows master: the next sync! pulls from it, not the deposit
+        @test readchomp(
+            `git -C $root rev-parse --abbrev-ref --symbolic-full-name '@{u}'`
+        ) == "origin/master"
     end
     @test Archeion.deposit_branch("20260923T000000Z-abcd") ==
         "deposit/20260923T000000Z-abcd"
