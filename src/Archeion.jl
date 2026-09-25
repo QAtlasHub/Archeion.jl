@@ -210,7 +210,13 @@ function (@main)(args)
         return 0
     elseif cmd == "additions"
         haskey(opts, "base") || return usage()
-        a = additions(root; base=opts["base"])
+        a = try
+            additions(root; base=opts["base"])
+        catch e
+            e isa ErrorException || rethrow()
+            println(stderr, "error: ", e.msg)
+            return 2
+        end
         println("added: $(length(a.added)) file(s)")
         foreach(v -> println("violation: ", v), a.violations)
         isempty(a.added) && println("nothing is added")

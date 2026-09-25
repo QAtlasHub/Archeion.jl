@@ -244,11 +244,19 @@ function check_sums(r::Report, revdir)
             err!(r, sums, "`$file` does not match its sha256: the revision was changed")
         end
     end
-    for (dir, _, files) in walkdir(revdir), f in files
-        file = relpath(joinpath(dir, f), revdir)
-        file == "SHA256SUMS" ||
-            file in listed ||
-            err!(r, joinpath(dir, f), "not listed in SHA256SUMS")
+    for (dir, dirs, files) in walkdir(revdir), f in vcat(dirs, files)
+        full = joinpath(dir, f)
+        # A symbolic link is hashed through to whatever it points at, and a site copies it as a
+        # link: neither says what the revision holds. A warning, not an error, because a registry
+        # that validated before this check must still validate (registry/2 does not tighten).
+        islink(full) && warn!(
+            r,
+            full,
+            "is a symbolic link: a revision holds files, and the site will not carry it",
+        )
+        f in files || continue
+        file = relpath(full, revdir)
+        file == "SHA256SUMS" || file in listed || err!(r, full, "not listed in SHA256SUMS")
     end
 end
 

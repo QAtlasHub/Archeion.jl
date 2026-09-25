@@ -27,11 +27,12 @@ end
     additions(root; base) -> (; ok, added, violations)
 
 Whether the commits in `root` since `base` (a git ref, compared from their merge base) only add
-to the registry: new files under a record's `revisions/` or `events/`, a new `record.toml` or
-project file, and `registry.toml` changed in its index tables alone. Anything else — a file
-modified, deleted or renamed, an index field other than the tables, a file outside `records/` and
-`projects/` (a workflow, a script) — is a violation, named. `added` lists the paths added; `ok`
-also needs at least one.
+to the registry: new regular files under a record's `revisions/` or `events/`, a new `record.toml`
+or project file, and `registry.toml` changed in its index tables alone. Anything else is a
+violation, named: a file modified, deleted, renamed or given another mode; an index field other
+than the tables; a file outside `records/` and `projects/` (a workflow, a script); and anything
+added that is not a regular file — a symbolic link, or a submodule — since a site built from the
+tree would carry it as it is. `added` lists the paths added; `ok` also needs at least one.
 
 `validate` says the tree is well formed; this says nothing already in it was touched. A deposit
 merged without a person needs both.
@@ -39,16 +40,25 @@ merged without a person needs both.
 function additions(root; base)
     mb = git(root, "merge-base", base, "HEAD"; ok=true)
     mb === nothing && error("$base and HEAD share no history in $root")
-    out = git(root, "diff", "--name-status", "--no-renames", "-z", mb, "HEAD")
+    # `--raw` for the modes: a path alone does not say whether what was added is a file.
+    out = git(root, "diff", "--raw", "--no-renames", "--no-abbrev", "-z", mb, "HEAD")
     fields = split(something(out, ""), '\0'; keepempty=false)
     added, violations = String[], String[]
     for i in 1:2:(length(fields) - 1)
-        status, path = String(fields[i]), String(fields[i + 1])
+        meta, path = split(fields[i]), String(fields[i + 1])
+        newmode, status = String(meta[2]), String(meta[5])
         if path == INDEX_FILE && status == "M"
             _index_fields(root, mb) == _index_fields(root, "HEAD") || push!(
                 violations,
                 "$path: changed outside its index tables (only [projects] and [records] follow a deposit)",
             )
+        elseif status == "A" && !(newmode in ("100644", "100755"))
+            kind = get(
+                Dict("120000" => "a symbolic link", "160000" => "a submodule"),
+                newmode,
+                "mode $newmode",
+            )
+            push!(violations, "$path: added as $kind, not a regular file")
         elseif status == "A" && any(
             re -> occursin(re, path),
             (ADDED_REVISION, ADDED_EVENT, ADDED_RECORD, ADDED_PROJECT),
@@ -58,11 +68,11 @@ function additions(root; base)
             push!(violations, "$path: added outside what a deposit writes")
         else
             what = get(
-                Dict("M" => "modified", "D" => "deleted", "T" => "retyped"), status, status
+                Dict("M" => "modified", "D" => "deleted", "T" => "given another type"),
+                status,
+                status,
             )
-            push!(
-                violations, "$path: $what (a registry only grows; corrections are events)"
-            )
+            push!(violations, "$path: $what — a deposit only adds")
         end
     end
     return (; ok=isempty(violations) && !isempty(added), added, violations)
