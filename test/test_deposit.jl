@@ -234,3 +234,102 @@ end
         @test isempty(Archeion.validate(root).errors)
     end
 end
+
+@testset "deposit: a registry without git still gets its revision" begin
+    # What makes a revision what it is — its files, their digests, the parent it answers after —
+    # is true of a directory. `validate` says so before the commit is even attempted. Refusing
+    # here used to throw a raw `git add` failure *after* the revision was in place, which left it
+    # written, valid, and reported as a failure: the worst of both.
+    with_fixture() do root, rec, rev
+        @test !isdir(joinpath(root, ".git"))              # the fixture is a plain directory
+        src = (; gallery=joinpath(rev, "gallery"), agent=joinpath(rev, "agent"))
+        binding = joinpath(mktempdir(), "b.toml")
+        write(
+            binding,
+            "spec = \"registry/2\"\nregistry = \"$root\"\nproject = \"$PROJECT_UUID\"\n" *
+            "record = \"$RECORD_UUID\"\nslug = \"logistic-map\"\n",
+        )
+        # the rendering repository is still a git repository; only the registry is not
+        study = mktempdir()
+        for c in (`init -q`, `config user.name t`, `config user.email t@t`)
+            run(pipeline(`git -C $study $c`; stdout=devnull, stderr=devnull))
+        end
+        write(joinpath(study, "run.jl"), "# the script")
+        run(pipeline(`git -C $study add -A`; stdout=devnull, stderr=devnull))
+        run(
+            pipeline(
+                `git -C $study -c user.name=t -c user.email=t@t commit -qm base`;
+                stdout=devnull,
+                stderr=devnull,
+            ),
+        )
+
+        r = @test_logs (:warn, r"is not a git repository") match_mode = :any deposit(
+            binding; gallery=src.gallery, agent=src.agent, source_repo=study, doc=DOC
+        )
+        @test r.commit === nothing                        # and it says which part did not happen
+        @test r.pushed == false
+        @test isdir(r.dir) && sums_verify(r.dir)          # the revision is there, and checks out
+        @test isempty(Archeion.validate(root).errors)     # the registry is still valid
+    end
+end
+
+@testset "deposit: what a non-git registry does NOT get" begin
+    # The leniency is `deposit`'s, and it stops there. `publish` syncs with a remote and pushes,
+    # neither of which means anything without git — so it refuses at the front door rather than
+    # failing three calls later inside `git rev-parse`, which is what it used to do.
+    root = mktempdir()
+    Archeion.init(root; name="t", pages=false)
+    e = attempt(() -> Archeion.sync!(root))
+    @test e isa ErrorException
+    @test occursin("nothing to sync it with", e.msg)
+    @test occursin("`deposit` will still write a revision", e.msg)
+
+    for r in (:pr, :push)
+        e = attempt(
+            () -> Archeion.publish_revision!(root, "20260101T000000Z-aaaa", "t"; remote=r)
+        )
+        @test e isa ErrorException && occursin("nothing to push", e.msg)
+    end
+    # …and the one mode that claims no remote is allowed through
+    e = attempt(
+        () -> Archeion.publish_revision!(root, "20260101T000000Z-aaaa", "t"; remote=:local)
+    )
+    @test !(e isa ErrorException && occursin("nothing to push", something(e.msg, "")))
+    rm(root; recursive=true)
+end
+
+@testset "deposit: the commit it reports is the one that reached the remote" begin
+    # `rebase_onto_remote!` runs when the first push is rejected, and a rebase writes new commit
+    # objects. Reading HEAD before the push — which a refactor briefly did — hands the caller a
+    # SHA that is no longer the branch tip and was never pushed.
+    with_git_fixture() do root, binding, src
+        bare = mktempdir()
+        run(pipeline(`git init -q --bare $bare`; stdout=devnull, stderr=devnull))
+        for c in (`remote add origin $bare`, `push -q -u origin HEAD`)
+            run(pipeline(`git -C $root $c`; stdout=devnull, stderr=devnull))
+        end
+
+        # somebody else deposits first: the remote moves ahead of our clone
+        other = mktempdir()
+        run(pipeline(`git clone -q $bare $other`; stdout=devnull, stderr=devnull))
+        write(joinpath(other, "THEIRS.md"), "a commit we do not have\n")
+        for c in (`add -A`, `-c user.name=t -c user.email=t@t commit -qm theirs`, `push -q`)
+            run(pipeline(`git -C $other $c`; stdout=devnull, stderr=devnull))
+        end
+
+        r = deposit(
+            binding;
+            gallery=src.gallery,
+            agent=src.agent,
+            source_repo=root,
+            doc=DOC,
+            push=true,
+        )
+        @test r.pushed
+        head = readchomp(`git -C $root rev-parse HEAD`)
+        remote_head = readchomp(`git -C $bare rev-parse HEAD`)
+        @test r.commit == head                 # the branch tip after the rebase
+        @test r.commit == remote_head          # and what the remote actually has
+    end
+end

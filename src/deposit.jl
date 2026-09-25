@@ -14,6 +14,12 @@ const SKIP = Set([".pinax-manifest.toml"])                        # render-cache
 utcnow() = floor(now(Dates.UTC), Second)
 
 function git(dir, args...; ok=false)
+    # `ignorestatus` forgives a nonzero exit; it does nothing about a process that cannot be
+    # spawned at all, which is what happens when there is no `git` on PATH — `run` throws a bare
+    # `IOError` naming neither the registry nor the operation. Checked once, here, because every
+    # other git call in the package goes through this function.
+    Sys.which("git") === nothing &&
+        error("no `git` on PATH, so `git $(join(args, ' '))` cannot run in $dir")
     out = IOBuffer()
     err = IOBuffer()
     proc = run(pipeline(ignorestatus(`git -C $dir $args`); stdout=out, stderr=err))
@@ -22,6 +28,11 @@ function git(dir, args...; ok=false)
         error("git $(join(args, ' ')) failed in $dir:\n$(String(take!(err)))")
     return success(proc) ? strip(String(take!(out))) : nothing
 end
+
+# Whether `dir` is inside a git repository. Named because three places ask, and because what they
+# do with the answer differs: `check_settled` has nothing to check, `rollback!` has no undo to
+# offer, and `deposit` has a revision it can still write but no commit to make of it.
+under_git(dir) = git(dir, "rev-parse", "--git-dir"; ok=true) !== nothing
 
 # ── binding ───────────────────────────────────────────────────────────────────────────────────
 
@@ -81,7 +92,7 @@ commits **that**. One `git clean` later the registry holds a committed revision 
 resolves nowhere, and the parent's bytes are gone — not even as an unreferenced object.
 """
 function check_settled(reg)
-    git(reg, "rev-parse", "--git-dir"; ok=true) === nothing && return nothing
+    under_git(reg) || return nothing
     dirty = git(reg, "status", "--porcelain", "--", REGISTRY_CONTENT...; ok=true)
     (dirty === nothing || isempty(dirty)) && return nothing
     return error(
@@ -253,6 +264,14 @@ end
 Freeze a new revision of the binding's record: copy `gallery` and `agent`, write `entry.toml`,
 `README.md` and `SHA256SUMS`, move it into place, validate the whole registry (and take the
 revision back out if that fails), then commit only that path and push.
+
+A registry that is not under git still gets its revision: what makes a revision what it is holds
+of a directory, and `validate` has just agreed. The commit is what is skipped, `commit` comes back
+as `nothing` to say so, and nothing is pushed.
+
+That holds of `deposit` itself. It does not extend through [`publish`](@ref), which syncs with a
+remote and pushes — neither of which means anything without git — so `publish` refuses such a
+registry up front and says to use `deposit`.
 
 `doc` carries what the document model knows: `title`, `status` ("trial"/"final"), anchors split
 into `stable` and `positional` (written as `anchors.local`), and optionally `tags`, `question`,
@@ -433,11 +452,31 @@ function deposit(
         )
     end
 
+    # A registry that is not under git still gets its revision. Everything that makes a revision
+    # what it is — the files, their digests, the parent it answers after — is true of a directory,
+    # and `validate` has just said so. Refusing at this point used to throw a raw `git add` failure
+    # *after* the revision was already in place, which left it written, valid, and reported as a
+    # failure. So the commit is the part that is skipped, and `commit === nothing` says it was.
     path = relpath(new_record ? recdir : final, reg)
-    git(reg, "add", "--", path, INDEX_FILE)
-    git(reg, "commit", "-q", "-m", "deposit $id $rev: $(doc.title)", "--", path, INDEX_FILE)
+    committed = under_git(reg)
+    if committed
+        git(reg, "add", "--", path, INDEX_FILE)
+        git(
+            reg,
+            "commit",
+            "-q",
+            "-m",
+            "deposit $id $rev: $(doc.title)",
+            "--",
+            path,
+            INDEX_FILE,
+        )
+    else
+        @warn "$reg is not a git repository: the revision is written and validates, but nothing " *
+            "was committed, so nothing records when it arrived or what it was added to"
+    end
     pushed = false
-    if push
+    if push && committed
         if git(reg, "push", "-q"; ok=true) === nothing
             rebase_onto_remote!(reg)                      # someone else deposited meanwhile
             git(reg, "push", "-q")
@@ -449,7 +488,10 @@ function deposit(
         rev,
         parents=entry["parents"],
         dir=final,
-        commit=git(reg, "rev-parse", "HEAD"),
+        # Read after the push, not after the commit: a rejected first push goes through
+        # `rebase_onto_remote!`, which rewrites it, and the SHA a caller is handed has to be the
+        # one that actually reached the remote.
+        commit=committed ? git(reg, "rev-parse", "HEAD") : nothing,
         pushed,
         dirty=src === nothing ? nothing : src["repo"][1]["dirty"],
     )

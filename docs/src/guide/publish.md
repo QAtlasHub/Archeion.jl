@@ -89,14 +89,13 @@ If the revision turns out not to validate, it is taken back out and the index re
 left where you started.
 
 !!! note "What `deposit` needs from git"
-    It commits each revision as it lands, so **both** repositories must be git repositories: the
-    registry, and the one rendering the report (with at least one commit, because a revision cites
-    the commit that produced it).
+    The **rendering** repository must be one, with at least one commit, because a revision cites
+    the commit that produced it.
 
-    The undo covers the checks. It does not cover git itself: measured on a registry with no
-    `.git`, `deposit` fails at `git add` — *after* the revision has been moved into place. The
-    revision is complete and valid, it simply is not committed. If a deposit reports a git error,
-    look at the registry before re-running it.
+    The **registry** need not be. Without git the revision is still written, checked and kept —
+    only the commit is skipped, and `deposit` warns and returns `commit === nothing` to say so.
+    What is lost is the record of when it arrived and what it was added to, which is why a
+    registry you intend to keep should be under git anyway.
 
 ## One call instead of two
 

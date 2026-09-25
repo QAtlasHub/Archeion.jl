@@ -120,27 +120,25 @@ a browser treats as cross-origin.
 
 ## 5. Where git comes in
 
-Depositing is the one thing that needs it. [`deposit`](@ref) commits each revision as it lands, so
-**the registry must be a git repository by the time you publish a result into it** — and so must
-the repository that renders the report, because a revision cites the commit that produced it.
+Nothing here requires it. A registry with no `.git` at all takes `init`, `reindex!`, `validate`,
+`build` — and [`deposit`](@ref) too: the revision is written, checked and kept, and the only thing
+that does not happen is the commit. `deposit` warns and returns `commit === nothing` so you know
+which part was skipped.
 
-Measured, on a registry with no `.git` at all:
-
-| | |
-|---|---|
-| `init`, `reindex!`, `validate`, `build` | all work |
-| `deposit` | fails, at `git add`, after the revision is already on disk |
-
-So `git init` before your first deposit, not after:
+What you lose without git is the record of *when* each revision arrived and what it was added to.
+That is worth having, so:
 
 ```console
 $ git init && git add -A && git commit -m "the registry"
 ```
 
-And keep committing. [`deposit`](@ref) and [`sync!`](@ref) refuse a registry with uncommitted
-content of its own, because a half-written state is what the next deposit would build on;
-[`migrate!`](@ref) is stricter still and refuses any uncommitted change at all, because its undo is
-`git checkout`.
+And keep committing. Once a registry *is* under git, [`deposit`](@ref) and [`sync!`](@ref) refuse
+one with uncommitted content of its own, because a half-written state is what the next deposit
+would build on; [`migrate!`](@ref) is stricter still and refuses any uncommitted change at all,
+because its undo is `git checkout`.
+
+The repository that renders the report is the stricter requirement: a revision cites the commit
+that produced it, so that one does need to be a git repository with at least one commit.
 
 ## Then
 
