@@ -309,7 +309,7 @@ function verify(revdir; dest, entry=nothing, julia=nothing, event::Bool=true)
     cmd = setenv(netless ? `unshare -rn $base` : base, env; dir=r.study)
     log = joinpath(dest, "verify.log")
     ran = open(log, "w") do io
-        success(pipeline(ignorestatus(cmd); stdout=io, stderr=io))
+        return success(pipeline(ignorestatus(cmd); stdout=io, stderr=io))
     end
 
     prov = TOML.parsefile(joinpath(revdir, "provenance.toml"))

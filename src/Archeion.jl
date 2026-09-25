@@ -72,7 +72,24 @@ rendered the report is checked for being published — a revision cites it.
 function publish end
 
 export deposit, new_binding
-publicvalidate,reindex!,registry_of,sync!,check_source_published,publish_revision!,migrate!,build,anchors,doc_fields,provenance_from,publish,setup_pages,init,restore,verify,git_tree_hash,main
+public validate,
+    reindex!,
+    registry_of,
+    sync!,
+    check_source_published,
+    publish_revision!,
+    migrate!,
+    build,
+    anchors,
+    doc_fields,
+    provenance_from,
+    publish,
+    setup_pages,
+    init,
+    restore,
+    verify,
+    git_tree_hash,
+    main
 
 function usage(io=stderr)
     println(io, "usage: julia -m Archeion init [root] [--name=N] [--title=T] [--tagline=S]")

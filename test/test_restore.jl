@@ -90,7 +90,7 @@ function with_script_revision(f; kw...)
                     sources_dir=store.sources,
                 ),
             )
-            f(root, res)
+            return f(root, res)
         end
     finally
         rm(store.dir; recursive=true)
