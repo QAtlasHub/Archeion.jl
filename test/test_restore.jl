@@ -274,6 +274,26 @@ end
     end
 end
 
+@testset "the command line: restore and verify say what they did, by their exit code" begin
+    cli(args) = redirect_stdout(() -> Archeion.main(args), devnull)
+    with_script_revision() do root, res
+        @test cli(["restore", res.dir, sealed()]) == 0
+        @test cli(["verify", res.dir, sealed()]) == 0
+        @test cli(["restore", res.dir]) == 2                   # usage: a destination is needed
+    end
+    with_script_revision(; result="43\n") do root, res
+        @test cli(["verify", res.dir, sealed()]) == 1          # ran, and did not reproduce
+    end
+    content, _ = depot_package()
+    name = "pkg:Foo:$R_UUID"
+    with_script_revision(;
+        extra=[(name, "src/Foo.jl", "file", content)],
+        roots=[(; name, kind="depot", head="0"^40)],
+    ) do root, res
+        @test cli(["restore", res.dir, sealed()]) == 1         # a tree off its pin
+    end
+end
+
 @testset "restore: a Julia that is not the recorded binary is not run" begin
     with_script_revision(; exe_sha="f"^64) do root, res
         r = Archeion.restore(res.dir, sealed())
