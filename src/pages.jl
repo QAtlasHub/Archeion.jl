@@ -9,6 +9,7 @@
 const PAGES_WORKFLOW = "pages.yml"
 const VALIDATE_WORKFLOW = "validate.yml"
 const SITE_WORKFLOW = "site.yml"
+const DEPOSIT_WORKFLOW = "deposit.yml"
 
 _version() = string(pkgversion(@__MODULE__))
 
@@ -145,9 +146,63 @@ $(_setup_steps(version))
 """
 end
 
+# A deposit's pull request, merged without a person when the registry says it may be: the tree
+# validates, and the change only adds (`additions`). Only branches `publish` pushes (`deposit/…`)
+# from this repository itself, never a fork. What is merged is the commit that was checked
+# (`--match-head-commit`), one at a time. A merge made with the workflow's own token starts no
+# other workflow, so the site is asked to rebuild here, by name.
+function _deposit_yml(version, branch, runner, site_workflow)
+    return """
+name: deposit
+
+# Merges a deposit's pull request when the registry checks it: the tree validates and the change
+# only adds to it. Written by `julia -m Archeion pages --automerge=true`; run that again when the
+# version changes.
+on:
+  pull_request:
+    branches: [$branch]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: deposit-merge
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: startsWith(github.head_ref, 'deposit/') && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: $runner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: \${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+$(_setup_steps(version))
+      - name: The tree is well formed
+        run: julia --startup-file=no --project=archeion-env -m Archeion validate .
+      - name: Nothing already in it was touched
+        run: julia --startup-file=no --project=archeion-env -m Archeion additions . --base=origin/\${{ github.base_ref }}
+      - name: Merge the commit that was checked
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: >-
+          gh pr merge \${{ github.event.pull_request.number }} --merge
+          --match-head-commit \${{ github.event.pull_request.head.sha }}
+          --repo \${{ github.repository }}
+      - name: Rebuild the site from what was merged
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: gh workflow run $site_workflow --ref $branch --repo \${{ github.repository }}
+"""
+end
+
 """
     setup_pages(root; version = this version, branch = default_branch(root), validate = true,
-                runner = "ubuntu-latest", site = nothing) -> (; written, skipped)
+                runner = "ubuntu-latest", site = nothing, automerge = false) -> (; written, skipped)
 
 Write the workflows that publish `root` as a site and check it on every push. Returns the paths
 `written` and those `skipped`, relative to `root`. The Archeion version is pinned to the one writing them, which is what
@@ -157,6 +212,11 @@ By default the site is **GitHub Pages**. A **private repository's Pages site is 
 plan but Enterprise Cloud, so for a registry that must not be, pass `site` — a directory on the
 machine `runner` names, built into on every push and read from there over SSH — and the Pages
 workflow is not written at all.
+
+With `automerge`, a third workflow merges a deposit's pull request (a `deposit/…` branch of this
+repository, as `publish` pushes) without a person when the tree validates and the change only adds
+to it ([`additions`](@ref)), then asks the site to rebuild. A public registry is public from the
+push: this decides only when a deposit is merged, not what may be deposited.
 """
 function setup_pages(
     root;
@@ -165,6 +225,7 @@ function setup_pages(
     validate::Bool=true,
     runner="ubuntu-latest",
     site=nothing,
+    automerge::Bool=false,
 )
     dir = joinpath(root, ".github", "workflows")
     mkpath(dir)
@@ -182,6 +243,14 @@ function setup_pages(
     else
         push!(skipped, joinpath(".github", "workflows", VALIDATE_WORKFLOW))
     end
+    if automerge
+        site_workflow = site === nothing ? PAGES_WORKFLOW : SITE_WORKFLOW
+        write(
+            joinpath(dir, DEPOSIT_WORKFLOW),
+            _deposit_yml(version, branch, runner, site_workflow),
+        )
+        push!(written, joinpath(".github", "workflows", DEPOSIT_WORKFLOW))
+    end
     return (; written, skipped)
 end
 
@@ -194,6 +263,11 @@ end
 # What the person still has to do, which no file can do for them.
 function pages_instructions(io, root, written, version; site=nothing)
     foreach(p -> println(io, "wrote ", p), written)
+    any(p -> endswith(p, DEPOSIT_WORKFLOW), written) && println(
+        io,
+        "note: $DEPOSIT_WORKFLOW merges with the workflow's own token: the repository must " *
+        "allow merge commits, and Settings -> Actions -> Workflow permissions must allow write",
+    )
     println(io, "pinned to Archeion v", version)
     named = implementation_named(root)
     named === nothing ||

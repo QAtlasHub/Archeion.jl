@@ -73,6 +73,16 @@ verify
 git_tree_hash
 ```
 
+## Whether a change only adds
+
+A deposit only adds to a registry. `additions` compares two commits and names anything else, so a
+deposit's pull request can be merged without a person when it and `validate` both pass —
+`julia -m Archeion pages --automerge=true` writes the workflow that does.
+
+```@docs
+additions
+```
+
 ## The command line
 
 ```@docs

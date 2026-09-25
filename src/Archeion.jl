@@ -34,6 +34,7 @@ include("provenance.jl")
 include("deposit.jl")
 include("remote.jl")
 include("restore.jl")
+include("additions.jl")
 include("pages.jl")
 include("init.jl")
 include("migrate.jl")
@@ -89,6 +90,7 @@ public validate,
     restore,
     verify,
     git_tree_hash,
+    additions,
     main
 
 function usage(io=stderr)
@@ -98,12 +100,16 @@ function usage(io=stderr)
     println(io, "       julia -m Archeion migrate [root]     # registry/1 -> registry/2")
     println(io, "       julia -m Archeion build [root] [out]")
     println(
-        io, "       julia -m Archeion pages [root] [--branch=B] [--runner=R] [--site=DIR]"
+        io,
+        "       julia -m Archeion pages [root] [--branch=B] [--runner=R] [--site=DIR] " *
+        "[--automerge=true]",
     )
     println(
         io, "         writes the workflows that publish the catalogue: GitHub Pages, or"
     )
     println(io, "         with --site a directory on the runner's machine, read over SSH")
+    println(io, "       julia -m Archeion additions [root] --base=REF")
+    println(io, "         whether the commits since REF only add to the registry")
     println(io, "       julia -m Archeion restore <revision> <dest>")
     println(io, "       julia -m Archeion verify <revision> <dest> [--entry=F] [--julia=J]")
     println(io, "         recompute a revision from what it holds, in a sealed directory")
@@ -196,11 +202,20 @@ function (@main)(args)
             branch=get(opts, "branch", default_branch(root)),
             runner=get(opts, "runner", "ubuntu-latest"),
             site=get(opts, "site", nothing),
+            automerge=get(opts, "automerge", "false") == "true",
         )
         pages_instructions(
             stdout, root, written.written, _version(); site=get(opts, "site", nothing)
         )
         return 0
+    elseif cmd == "additions"
+        haskey(opts, "base") || return usage()
+        a = additions(root; base=opts["base"])
+        println("added: $(length(a.added)) file(s)")
+        foreach(v -> println("violation: ", v), a.violations)
+        isempty(a.added) && println("nothing is added")
+        println(a.ok ? "ok: only additions" : "not only additions")
+        return a.ok ? 0 : 1
     elseif cmd in ("restore", "verify")
         length(rest) == 2 || return usage()
         if cmd == "restore"
