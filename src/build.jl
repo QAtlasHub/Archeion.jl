@@ -721,6 +721,18 @@ function copy_revision(src, dest, appearance="system")
         name in SITE_SKIP && isdir(joinpath(src, name)) && continue
         cp(joinpath(src, name), joinpath(dest, name))
     end
+    # `cp` keeps a symbolic link a link, and the page server then follows it wherever it points
+    # on the machine the site is read from. A revision holds files; a link is left out, and said.
+    links = [
+        joinpath(d, n) for (d, dirs, fs) in walkdir(dest) for
+        n in vcat(dirs, fs) if islink(joinpath(d, n))
+    ]
+    for l in links
+        @warn "a symbolic link in a revision is not copied into the site" link = relpath(
+            l, dest
+        )
+        rm(l)
+    end
     # The copy may carry what the revision cannot: a revision is frozen under its own SHA256SUMS,
     # and most of them were rendered before there was a dark mode to render (dark.jl).
     return darken_site_copy!(dest, appearance)

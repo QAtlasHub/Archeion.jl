@@ -33,14 +33,14 @@ end
 
 # Written as one string with its indentation spelled out: a triple-quoted block would be dedented
 # to its own margin, and YAML is indentation.
-function _setup_steps(version)
+function _setup_steps(version; env="archeion-env")
     return join(
         [
             "      - uses: julia-actions/setup-julia@v2",
             "        with:",
             "          version: \"1.12\"",
             "      - name: Install Archeion into a throwaway environment",
-            "        run: julia --startup-file=no -e 'using Pkg; Pkg.activate(\"archeion-env\"); " *
+            "        run: julia --startup-file=no -e 'using Pkg; Pkg.activate(\"$env\"); " *
             "Pkg.add(url=\"https://github.com/QAtlasHub/Archeion.jl\", rev=\"v$version\")'",
         ],
         "\n",
@@ -151,6 +151,15 @@ end
 # from this repository itself, never a fork. What is merged is the commit that was checked
 # (`--match-head-commit`), one at a time. A merge made with the workflow's own token starts no
 # other workflow, so the site is asked to rebuild here, by name.
+#
+# `pull_request_target`, not `pull_request`: the checks are then the default branch's, and a
+# deposit branch that edits this file does not edit the checks it is judged by. The branch's
+# content is only read, as data, by an Archeion installed from a pinned tag — nothing in it runs —
+# so the write token this event carries is not handed to anything the branch wrote. A failure is
+# said on the pull request, since nobody is expected to be watching the run. Archeion's environment
+# is made outside the checkout: a branch that shipped its own `archeion-env/Manifest.toml` would
+# otherwise choose what that environment loads.
+const DEPOSIT_ENV = "\${{ runner.temp }}/archeion-env"
 function _deposit_yml(version, branch, runner, site_workflow)
     return """
 name: deposit
@@ -159,7 +168,7 @@ name: deposit
 # only adds to it. Written by `julia -m Archeion pages --automerge=true`; run that again when the
 # version changes.
 on:
-  pull_request:
+  pull_request_target:
     branches: [$branch]
     types: [opened, synchronize, reopened]
 
@@ -181,11 +190,12 @@ jobs:
         with:
           ref: \${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-$(_setup_steps(version))
+          persist-credentials: false
+$(_setup_steps(version; env=DEPOSIT_ENV))
       - name: The tree is well formed
-        run: julia --startup-file=no --project=archeion-env -m Archeion validate .
+        run: julia --startup-file=no --project=$DEPOSIT_ENV -m Archeion validate .
       - name: Nothing already in it was touched
-        run: julia --startup-file=no --project=archeion-env -m Archeion additions . --base=origin/\${{ github.base_ref }}
+        run: julia --startup-file=no --project=$DEPOSIT_ENV -m Archeion additions . --base=origin/\${{ github.base_ref }}
       - name: Merge the commit that was checked
         env:
           GH_TOKEN: \${{ github.token }}
@@ -197,6 +207,13 @@ $(_setup_steps(version))
         env:
           GH_TOKEN: \${{ github.token }}
         run: gh workflow run $site_workflow --ref $branch --repo \${{ github.repository }}
+      - name: Say so on the pull request when any of this failed
+        if: failure()
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: >-
+          gh pr comment \${{ github.event.pull_request.number }} --repo \${{ github.repository }}
+          --body "deposit.yml did not finish: \${{ github.server_url }}/\${{ github.repository }}/actions/runs/\${{ github.run_id }}"
 """
 end
 
