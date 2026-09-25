@@ -37,6 +37,14 @@ point. A reader who followed a link to it last year still lands on what they rea
 
 ## Withdrawing: a `yank` event
 
+The word is borrowed from package registries — Julia's General, crates.io, PyPI all use it, and
+it means the same thing here. **To yank something is not to delete it.** The files stay where they
+are, the link still resolves, the digest still checks out; what changes is that it is no longer
+offered as the current answer.
+
+That difference is the whole reason the kind exists. Deleting says nothing. A yank says *this was
+here and should not be used*, which is a true statement somebody can still go and read.
+
 There is **no API for this**. Events are written by hand into the record's `events/` directory;
 `deposit` only reads them, to work out which revision is current. The file name and the fields
 are fixed by the format:
