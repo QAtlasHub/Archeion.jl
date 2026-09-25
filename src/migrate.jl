@@ -31,7 +31,7 @@ write_toml(path, d) = open(io -> TOML.print(io, d; sorted=true), path, "w")
 # `clean` removes what was renamed into place, and between them nothing of the original is left
 # changed. Returns whether it could.
 function rollback!(root)
-    git(root, "rev-parse", "--git-dir"; ok=true) === nothing && return false
+    under_git(root) || return false
     git(root, "checkout", "--", "."; ok=true)
     git(root, "clean", "-qfd"; ok=true)
     return true
@@ -39,7 +39,7 @@ end
 
 # Under git, uncommitted work would be indistinguishable from what a failed conversion left.
 function isdirty(root)
-    git(root, "rev-parse", "--git-dir"; ok=true) === nothing && return false
+    under_git(root) || return false
     return !isempty(something(git(root, "status", "--porcelain"; ok=true), ""))
 end
 

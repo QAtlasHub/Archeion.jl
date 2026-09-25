@@ -84,9 +84,10 @@ stricter — any uncommitted change at all — because its undo is `git checkout
     whether every project file and `record.toml` parses — before the first rename, and undoes the
     rest with git if the converted tree does not validate
 
-The limit is worth knowing rather than discovering: the undo covers the checks, not git itself. A
-`deposit` into a registry that is not a git repository fails at `git add`, *after* the revision
-has been moved into place.
+The refusals are about the checks, not about git. A registry that is not under git still takes a
+deposit: everything that makes a revision what it is holds of a directory, and `validate` has just
+agreed, so the commit is the part that is skipped rather than the revision. `commit === nothing`
+in the return says which part that was.
 
 ## Two faces, one document
 

@@ -234,3 +234,42 @@ end
         @test isempty(Archeion.validate(root).errors)
     end
 end
+
+@testset "deposit: a registry without git still gets its revision" begin
+    # What makes a revision what it is — its files, their digests, the parent it answers after —
+    # is true of a directory. `validate` says so before the commit is even attempted. Refusing
+    # here used to throw a raw `git add` failure *after* the revision was in place, which left it
+    # written, valid, and reported as a failure: the worst of both.
+    with_fixture() do root, rec, rev
+        @test !isdir(joinpath(root, ".git"))              # the fixture is a plain directory
+        src = (; gallery=joinpath(rev, "gallery"), agent=joinpath(rev, "agent"))
+        binding = joinpath(mktempdir(), "b.toml")
+        write(
+            binding,
+            "spec = \"registry/2\"\nregistry = \"$root\"\nproject = \"$PROJECT_UUID\"\n" *
+            "record = \"$RECORD_UUID\"\nslug = \"logistic-map\"\n",
+        )
+        # the rendering repository is still a git repository; only the registry is not
+        study = mktempdir()
+        for c in (`init -q`, `config user.name t`, `config user.email t@t`)
+            run(pipeline(`git -C $study $c`; stdout=devnull, stderr=devnull))
+        end
+        write(joinpath(study, "run.jl"), "# the script")
+        run(pipeline(`git -C $study add -A`; stdout=devnull, stderr=devnull))
+        run(
+            pipeline(
+                `git -C $study -c user.name=t -c user.email=t@t commit -qm base`;
+                stdout=devnull,
+                stderr=devnull,
+            ),
+        )
+
+        r = @test_logs (:warn, r"is not a git repository") match_mode = :any deposit(
+            binding; gallery=src.gallery, agent=src.agent, source_repo=study, doc=DOC
+        )
+        @test r.commit === nothing                        # and it says which part did not happen
+        @test r.pushed == false
+        @test isdir(r.dir) && sums_verify(r.dir)          # the revision is there, and checks out
+        @test isempty(Archeion.validate(root).errors)     # the registry is still valid
+    end
+end
