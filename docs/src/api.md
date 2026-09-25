@@ -61,6 +61,18 @@ write_provenance!
 provenance_from
 ```
 
+## Recomputing a revision from itself
+
+`restore` lays out what a revision's `repro/` holds; `verify` also runs the study there, with
+nothing else to draw on, and writes `capability.verified` only when every point's result comes out
+the same (SPEC §6).
+
+```@docs
+restore
+verify
+git_tree_hash
+```
+
 ## The command line
 
 ```@docs
