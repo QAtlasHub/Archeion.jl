@@ -50,9 +50,43 @@ git_tree_hash(dir) = bytes2hex(something(_git_tree(dir), _git_object("tree", UIn
 
 _rows(tsv) = [split(l, '\t') for l in readlines(tsv)[2:end] if !isempty(l)]
 
-# The observation the points were computed under. More than one source state among them is a
-# revision whose points came from different code, and restoring one of them would say otherwise.
-function _compute_observation(revdir)
+# ── what a revision may name, before any of it becomes a path ─────────────────────────────────
+#
+# A revision restored here may come from someone else's registry, and `validate` does not read a
+# snapshot's rows. So every name that is about to become part of a path is checked first: a
+# token, a snapshot id, a blob digest, and each part of a root's name; and every file's path must
+# stay inside its root. A revision that names something else is refused, not tidied.
+
+const PKG_NAME = r"^[A-Za-z_][A-Za-z0-9_]*$"
+const TREE = r"^[0-9a-f]{40}$"
+
+function _refuse(what, value, revdir)
+    return error("$revdir names $what $(repr(value)), which cannot be restored safely")
+end
+
+# `rel` is inside its root: relative, no `..`, no empty or `.` segment that hides one.
+function _inside_root(rel)
+    (isempty(rel) || isabspath(rel) || occursin('\0', rel)) && return false
+    return all(s -> !(s in ("", ".", "..")), split(rel, '/'))
+end
+
+# A symlink at `rel` pointing at `target` resolves inside its root.
+function _link_inside(rel, target)
+    (isempty(target) || isabspath(target)) && return false
+    depth = 0
+    for s in vcat(split(dirname(rel), '/'; keepempty=false), split(target, '/'))
+        s in ("", ".") && continue
+        depth += s == ".." ? -1 : 1
+        depth < 0 && return false
+    end
+    return true
+end
+
+# The observations the points were computed under, all of one source state: a sweep run across
+# processes has one observation per process, and they are the same code. More than one source
+# state among them is a revision whose points came from different code, and restoring one of
+# them would say otherwise.
+function _compute_observations(revdir)
     prov = TOML.parsefile(joinpath(revdir, "provenance.toml"))
     tokens = unique(
         r[5] for r in _rows(joinpath(revdir, prov["points_file"])) if r[5] != "unknown"
@@ -61,6 +95,7 @@ function _compute_observation(revdir)
         error("no point in $revdir names the observation it was computed under")
     by_source = Dict{String,Vector{String}}()
     for t in tokens
+        occursin(TOKEN, t) || _refuse("the observation", t, revdir)
         f = joinpath(revdir, "repro", "observations", "$t.toml")
         isfile(f) || error("observation $t is not held in $revdir")
         push!(get!(by_source, TOML.parsefile(f)["source"], String[]), t)
@@ -69,7 +104,7 @@ function _compute_observation(revdir)
         "the points of $revdir were computed from $(length(by_source)) source states; " *
         "restore one by naming its observation (`token`): $(join(tokens, ", "))",
     )
-    return first(only(values(by_source)))
+    return sort(only(values(by_source)))
 end
 
 function _julia_for(obs)
@@ -98,48 +133,72 @@ matched. `julia` is the recorded binary when it is on this host and hashes as re
 """
 function restore(revdir, dest; token=nothing)
     ispath(dest) && error("$dest exists; restore into a new directory")
-    token = something(token, _compute_observation(revdir))
+    tokens = token === nothing ? _compute_observations(revdir) : [token]
+    token = first(tokens)
+    occursin(TOKEN, token) || _refuse("the observation", token, revdir)
     repro = joinpath(revdir, "repro")
     obs = TOML.parsefile(joinpath(repro, "observations", "$token.toml"))
     id = obs["source"]
+    occursin(SNAPSHOT, id) || _refuse("the snapshot", id, revdir)
     snap = joinpath(repro, "sources", id[6:37])
     roots = Dict(r["name"] => r for r in get(obs, "roots", []))
-    blob(sha) = joinpath(repro, "blobs", sha[1:min(32, end)])
+    blob(sha) = joinpath(repro, "blobs", sha[1:32])       # only ever called on SHA_HEX
 
+    # Where each root goes. Its name is parsed, and every part that becomes a path is checked. An
+    # artifact's tree is read from its name rather than its `head`: DataVault 0.8.7 before its
+    # last commit wrote `head = "unknown"` for artifacts, and those revisions still restore.
     study = joinpath(dest, "study")
     depot = joinpath(dest, "depot")
     target = Dict{String,String}()
     uuid_dir = Dict{String,String}()
     for (name, r) in roots
+        kind = get(r, "kind", "")
         parts = split(name, ':')
-        target[name] = if name == "config"
-            study
-        elseif get(r, "kind", "") == "artifact" && length(parts) == 3
-            joinpath(depot, "artifacts", parts[3])          # its name ends in its tree hash
-        elseif get(r, "kind", "") == "depot" && length(parts) == 3
-            slug = Base.version_slug(Base.UUID(parts[3]), Base.SHA1(r["head"]))
-            joinpath(depot, "packages", parts[2], slug)
-        else
-            joinpath(dest, "dev", parts[2])
+        if name == "config"
+            target[name] = study
+            continue
         end
-        length(parts) == 3 &&
-            startswith(name, "pkg:") &&
-            (uuid_dir[parts[3]] = target[name])
+        (length(parts) == 3 && occursin(PKG_NAME, parts[2]) || kind == "artifact") ||
+            _refuse("the root", name, revdir)
+        target[name] = if kind == "artifact"
+            (length(parts) == 3 && occursin(TREE, parts[3])) ||
+                _refuse("the artifact", name, revdir)
+            joinpath(depot, "artifacts", parts[3])
+        else
+            is_uuid(parts[3]) || _refuse("the package", name, revdir)
+            if kind == "depot"
+                occursin(TREE, get(r, "head", "")) || _refuse("the tree of", name, revdir)
+                slug = Base.version_slug(Base.UUID(parts[3]), Base.SHA1(r["head"]))
+                joinpath(depot, "packages", parts[2], slug)
+            else
+                joinpath(dest, "dev", parts[2])
+            end
+        end
+        startswith(name, "pkg:") && (uuid_dir[parts[3]] = target[name])
     end
 
     missing = String[]
     mkpath(dest)
     for r in _rows(joinpath(snap, "files.tsv"))
         root, rel, type, mode, sha = r[1], unescape_string(r[2]), r[3], r[4], r[6]
+        _inside_root(rel) || _refuse("the file", "$root:$rel", revdir)
         dir = get(target, root, nothing)
-        if dir === nothing || !(type in ("file", "symlink")) || !isfile(blob(sha))
+        if dir === nothing ||
+            !(type in ("file", "symlink")) ||
+            !occursin(SHA_HEX, sha) ||
+            !isfile(blob(sha))
             push!(missing, "$root:$rel ($type)")
             continue
         end
         out = joinpath(dir, rel)
         mkpath(dirname(out))
         if type == "symlink"                              # the blob is the link's target
-            symlink(read(blob(sha), String), out)
+            target_ = read(blob(sha), String)
+            if !_link_inside(rel, target_)
+                push!(missing, "$root:$rel (symlink leaving its root)")
+                continue
+            end
+            symlink(target_, out)
         else
             cp(blob(sha), out)
             chmod(out, mode == "x" ? 0o755 : 0o644)
@@ -246,6 +305,7 @@ function restore(revdir, dest; token=nothing)
         trees,
         stripped,
         token,
+        tokens,
         observation=obs,
     )
 end
@@ -270,10 +330,13 @@ namespace unshared where the host allows it, and the recorded Julia and BLAS thr
 study's DataVault output is redirected (`DATAVAULT_OUTDIR`) to `dest/out`, so a study must not
 pass `outdir` itself.
 
-Every point the revision computed under that observation is then compared by the SHA-256 of its
-result file. When every one matches and `event`, a `capability.verified` event is written into the
-record's `events/`, saying what was compared and under which conditions — including whether the
-network was actually unavailable, since an offline flag alone does not show it.
+Every point of the revision is then compared by the SHA-256 of its result file. `ok` — and, when
+`event`, a `capability.verified` event in the record's `events/` — needs every point to have been
+compared and matched: a point whose result digest was never recorded, or that names no
+observation of the restored source, is `excluded` and withholds the event rather than being left
+out of a count. The event says what was compared and under which conditions: whether the network
+was actually unavailable (an offline flag alone does not show it) and how many files the revision
+named but did not hold (`not_held`).
 """
 function verify(revdir; dest, entry=nothing, julia=nothing, event::Bool=true)
     r = restore(revdir, dest)
@@ -312,9 +375,13 @@ function verify(revdir; dest, entry=nothing, julia=nothing, event::Bool=true)
         return success(pipeline(ignorestatus(cmd); stdout=io, stderr=io))
     end
 
+    # Every point of the revision, not only those of one observation: a sweep across processes
+    # has one per process. A point that cannot be compared is excluded by name, never dropped.
     prov = TOML.parsefile(joinpath(revdir, "provenance.toml"))
-    rows = [x for x in _rows(joinpath(revdir, prov["points_file"])) if x[5] == r.token]
-    compared = [x for x in rows if occursin(r"^[0-9a-f]{64}$", x[4])]
+    rows = _rows(joinpath(revdir, prov["points_file"]))
+    comparable(x) = x[5] in r.tokens && occursin(SHA_HEX, x[4]) && _inside_root(x[2])
+    compared = filter(comparable, rows)
+    excluded = [x[1] for x in rows if !comparable(x)]
     matched, differs, absent = String[], String[], String[]
     for x in compared
         f = joinpath(out, unescape_string(x[2]))
@@ -326,7 +393,11 @@ function verify(revdir; dest, entry=nothing, julia=nothing, event::Bool=true)
             push!(differs, x[1])
         end
     end
-    ok = ran && !isempty(compared) && length(matched) == length(compared)
+    ok =
+        ran &&
+        !isempty(compared) &&
+        isempty(excluded) &&
+        length(matched) == length(compared)
 
     written = nothing
     if ok && event
@@ -342,14 +413,16 @@ function verify(revdir; dest, entry=nothing, julia=nothing, event::Bool=true)
             "criterion" => "result-file-sha256",
             "points" => length(compared),
             "matched" => length(matched),
-            "observation" => r.token,
+            "observations" => r.tokens,
             "conditions" => Dict{String,Any}(
                 "depot" => "restored-only",
                 "home" => "empty",
                 "network" => netless ? "unshared" : "not-blocked",
+                "not_held" => length(r.missing),
                 "host" => gethostname(),
                 "julia_version" => string(get(j, "version", "")),
                 "executable_sha256" => bytes2hex(open(sha256, exe)),
+                "julia_as_recorded" => r.julia !== nothing && exe == r.julia,
                 "threads" => get(j, "threads", 0),
                 "blas_threads" => get(j, "blas_threads", 0),
             ),
@@ -367,6 +440,7 @@ function verify(revdir; dest, entry=nothing, julia=nothing, event::Bool=true)
         matched,
         differs,
         absent,
+        excluded,
         log,
         network=netless ? "unshared" : "not-blocked",
         event=written,

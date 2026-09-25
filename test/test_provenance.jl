@@ -152,6 +152,14 @@ end
                 @test e isa ErrorException && occursin("not a git repository", e.msg)
                 @test commits(root) == before
             end
+            # Asked to hold the files, but the store no longer has the observation: `repro/`
+            # would hold no snapshot, and that is decided from what it holds, not what was asked.
+            e = go(merge(prov(true), (; observations_dir=mktempdir())))
+            @test e isa ErrorException &&
+                occursin("no source snapshot reached repro/", e.msg)
+            @test commits(root) == before
+            incoming = joinpath(root, "_incoming")
+            @test !isdir(incoming) || isempty(readdir(incoming))
             res = go(prov(true))
             @test !(res isa Exception)
             @test isempty(Archeion.validate(root).errors)

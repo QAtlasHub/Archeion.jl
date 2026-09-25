@@ -1,11 +1,11 @@
-# deposit.jl — add a revision to a registry/1 record.
+# deposit.jl — add a revision to a registry/2 record.
 #
 # Called by the script that renders a report, which holds the document model and passes what the
 # entry needs as values (SPEC.md §5.1): nothing here parses the rendered output. Two operations,
 # deliberately separate (a copied script must not silently continue someone else's record):
 #
-#     new_binding(path; registry, project, slug)   # once: choose a new record id, write the binding
-#     deposit(path; gallery, agent, doc, ...)      # every time: add a revision to that record
+#     new_binding(path; root, project, slug)       # once: choose a new record id, write the binding
+#     deposit(binding; gallery, agent, doc, ...)   # every time: add a revision to that record
 #
 # The binding is a small TOML file committed in the repository whose code renders the report.
 
@@ -124,6 +124,15 @@ function source_now(repo, role)
     url = git(repo, "remote", "get-url", "origin"; ok=true)
     url === nothing || (r["url"] = url)
     return Dict{String,Any}("captured" => "publish", "repo" => [r])
+end
+
+# Whether a revision being written holds some source: a snapshot's inventory in `repro/sources/`
+# and file contents in `repro/blobs/`.
+function _holds_source(revdir)
+    sources, blobs = joinpath(revdir, "repro", "sources"),
+    joinpath(revdir, "repro", "blobs")
+    isdir(sources) && isdir(blobs) && !isempty(readdir(blobs)) || return false
+    return any(d -> isfile(joinpath(sources, d, "files.tsv")), readdir(sources))
 end
 
 function readme(e; held::Bool=false)
@@ -352,21 +361,21 @@ function deposit(
         "preservation" => Dict{String,Any}("level" => "read"),
     )
     # Without git, the only record of the code is the source contents the provenance copies in. A
-    # revision with neither would say nothing about what produced it, so it is refused.
-    held = provenance !== nothing && get(provenance, :source_contents, true)
+    # revision with neither would say nothing about what produced it, so it is refused: up front
+    # when nothing could be copied, and again below from what `repro/` actually came to hold.
+    asked = provenance !== nothing && get(provenance, :source_contents, true)
     src = source_now(source_repo, "render")
+    no_code(why) = error(
+        "$source_repo is not a git repository, and $why: nothing would record what code " *
+        "produced this revision",
+    )
     if src === nothing
-        held || error(
-            "$source_repo is not a git repository, and no source contents are deposited " *
-            "(pass `provenance` with `source_contents = true`): nothing would record what " *
-            "code produced this revision",
+        asked || no_code(
+            "no source contents are deposited (pass `provenance` with " *
+            "`source_contents = true`)",
         )
     else
         entry["source"] = src
-        src["repo"][1]["dirty"] && @warn(
-            "$source_repo has uncommitted changes; the revision records `dirty = true`" *
-                (held ? ", and holds the files it could see in repro/" : ""),
-        )
     end
     for k in (:tags, :question, :claim)
         haskey(doc, k) && (entry["doc"][string(k)] = doc[k])
@@ -386,8 +395,20 @@ function deposit(
         open(
             io -> TOML.print(io, entry; sorted=true), joinpath(incoming, "entry.toml"), "w"
         )
-        write(joinpath(incoming, "README.md"), readme(entry; held))
         provenance === nothing || write_provenance!(incoming; provenance...)
+        # What the revision holds, not what was asked for: an observation the store no longer
+        # has leaves `repro/` without a snapshot, and then the code is recorded nowhere.
+        held = asked && _holds_source(incoming)
+        src === nothing &&
+            !held &&
+            no_code("no source snapshot reached repro/ (its observations are missing)")
+        src !== nothing &&
+            src["repo"][1]["dirty"] &&
+            @warn(
+                "$source_repo has uncommitted changes; the revision records `dirty = true`" *
+                    (held ? ", and holds the files it could see in repro/" : "")
+            )
+        write(joinpath(incoming, "README.md"), readme(entry; held))
         write_sums(incoming)                              # last: its presence means "complete"
     catch e
         discard!(incoming)                                # nothing half-written is left behind

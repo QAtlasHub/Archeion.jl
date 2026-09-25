@@ -227,6 +227,10 @@ function (@main)(args)
         )
         isempty(v.differs) || println("  differ: ", join(v.differs, ", "))
         isempty(v.absent) || println("  not produced: ", join(v.absent, ", "))
+        isempty(v.excluded) ||
+            println("  not comparable (withholds the event): ", join(v.excluded, ", "))
+        isempty(v.restored.missing) ||
+            println("  named but not held: $(length(v.restored.missing)) file(s)")
         v.event === nothing || println("  event: ", v.event)
         println("  log: ", v.log)
         return v.ok ? 0 : 1
