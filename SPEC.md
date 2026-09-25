@@ -241,6 +241,15 @@ key	file	read_sha256	result_sha256	observation	completed_at
   missing observations, and on every `loaded-matches-disk`.
 - When `provenance.toml` exists, `repro/observations/`, `repro/sources/` and `repro/blobs/` are its
   own.
+- What a recomputation reads from an observation, when present (all optional; a reader that finds
+  none of it can still show the revision): its roots' `kind` — `git` or `plain` for the study and
+  packages developed beside it, `depot` for a package loaded from a depot, whose `head` is the tree
+  the Manifest pins, and `artifact` for an artifact such a package loaded, named
+  `artifact:<name>:<tree>`; `program`, the script the process ran; and under `julia`, `bindir` and
+  `executable_sha256` (which binary), `platform`, and `blas_threads`. A symlink's blob, when kept,
+  holds its target. A root's files are laid out at the path its kind names: a `depot` package at
+  `packages/<name>/<slug>` and an `artifact` at `artifacts/<tree>` of a depot, and checked against
+  that tree.
 
 ## 6. Preservation
 
@@ -249,6 +258,15 @@ the URLs listed in `preservation.external`. `render` (rebuilt from what the revi
 `compute` (recomputed from preserved data) are claims that must be earned: an event of kind
 `capability.verified` records when, where and how the rebuild succeeded. Until then a revision is
 `read`, whatever files it carries.
+
+A `capability.verified` event may say what was earned and how (all optional): `capability`
+(`"compute"` or `"render"`), `criterion` (for example `"result-file-sha256"`: every point's result
+file, recomputed, hashed as its row's `result_sha256`), `points` and `matched`, the `observation` it
+recomputed from, and `conditions` — `depot` (`"restored-only"`: nothing but what the revision
+holds), `home`, `network` (`"unshared"` when the process had no network namespace, `"not-blocked"`
+when only offline flags were set, which does not show the network was unused), `host`,
+`julia_version`, `executable_sha256`, `threads`, `blas_threads`. A reader shows these as given; an
+event that states none of them claims only what its `kind` says.
 
 ## 7. Events
 

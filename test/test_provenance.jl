@@ -120,6 +120,53 @@ rewrite!(path, f) = write(path, f(read(path, String)))
     end
 end
 
+@testset "provenance: a study outside git is deposited from what the provenance holds" begin
+    store = synthetic_store()
+    plain = mktempdir()                                  # a study directory, no repository
+    try
+        with_git_fixture() do root, binding, src
+            function prov(contents)
+                return (;
+                    reads=[point("k1", store.token)],
+                    observations_dir=store.observations,
+                    sources_dir=store.sources,
+                    source_contents=contents,
+                )
+            end
+            function go(p)
+                return attempt(
+                    () -> deposit(
+                        binding;
+                        src...,
+                        doc=DOC,
+                        source_repo=plain,
+                        push=false,
+                        provenance=p,
+                    ),
+                )
+            end
+            before = commits(root)
+            # Neither a commit nor the files: nothing would say what produced it.
+            for p in (nothing, prov(false))
+                e = go(p)
+                @test e isa ErrorException && occursin("not a git repository", e.msg)
+                @test commits(root) == before
+            end
+            res = go(prov(true))
+            @test !(res isa Exception)
+            @test isempty(Archeion.validate(root).errors)
+            entry = TOML.parsefile(joinpath(res.dir, "entry.toml"))
+            @test !haskey(entry, "source")                # §5.1: unknown is omitted
+            @test res.dirty === nothing
+            @test occursin("held in `repro/`", read(joinpath(res.dir, "README.md"), String))
+            @test isfile(joinpath(res.dir, "repro", "blobs", store.bsha[1:32]))
+        end
+    finally
+        rm(plain; recursive=true)
+        rm(store.dir; recursive=true)
+    end
+end
+
 @testset "provenance: without contents, only the inventory is kept" begin
     store = synthetic_store()
     deposited([point("k1", store.token)]; store, source_contents=false) do root, res

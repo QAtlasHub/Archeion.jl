@@ -33,6 +33,7 @@ include("build.jl")
 include("provenance.jl")
 include("deposit.jl")
 include("remote.jl")
+include("restore.jl")
 include("pages.jl")
 include("init.jl")
 include("migrate.jl")
@@ -71,21 +72,7 @@ rendered the report is checked for being published — a revision cites it.
 function publish end
 
 export deposit, new_binding
-public validate,
-    reindex!,
-    registry_of,
-    sync!,
-    check_source_published,
-    publish_revision!,
-    migrate!,
-    build,
-    anchors,
-    doc_fields,
-    provenance_from,
-    publish,
-    setup_pages,
-    init,
-    main
+publicvalidate,reindex!,registry_of,sync!,check_source_published,publish_revision!,migrate!,build,anchors,doc_fields,provenance_from,publish,setup_pages,init,restore,verify,git_tree_hash,main
 
 function usage(io=stderr)
     println(io, "usage: julia -m Archeion init [root] [--name=N] [--title=T] [--tagline=S]")
@@ -100,6 +87,9 @@ function usage(io=stderr)
         io, "         writes the workflows that publish the catalogue: GitHub Pages, or"
     )
     println(io, "         with --site a directory on the runner's machine, read over SSH")
+    println(io, "       julia -m Archeion restore <revision> <dest>")
+    println(io, "       julia -m Archeion verify <revision> <dest> [--entry=F] [--julia=J]")
+    println(io, "         recompute a revision from what it holds, in a sealed directory")
     return 2
 end
 
@@ -125,6 +115,8 @@ The command line. `usage()` prints the same list; in short:
 - `pages [root]` writes the workflows that publish it, pinned to this version
 - `reindex [root]` rewrites `registry.toml`'s index from the tree
 - `migrate [root]` converts a `registry/1` tree, and prints which identifier became which UUID
+- `restore <revision> <dest>` lays out what a revision holds; `verify <revision> <dest>` also
+  recomputes it there and, when every point matches, writes `capability.verified`
 
 Returns the process exit code: 0, 1 for a registry with errors, 2 for a usage problem.
 """
@@ -192,6 +184,35 @@ function (@main)(args)
             stdout, root, written.written, _version(); site=get(opts, "site", nothing)
         )
         return 0
+    elseif cmd in ("restore", "verify")
+        length(rest) == 2 || return usage()
+        if cmd == "restore"
+            r = restore(rest[1], rest[2])
+            println("restored $(rest[1]) into $(r.dest)")
+            println("  project: $(r.project)")
+            println("  entry:   $(join(r.entry, ", "))")
+            println("  julia:   ", something(r.julia, r.julia_note))
+            for (k, v) in sort(collect(r.trees))
+                println("  ", v ? "matches " : "DIFFERS ", k)
+            end
+            isempty(r.missing) || println("  not held: $(length(r.missing)) file(s)")
+            return all(values(r.trees)) ? 0 : 1
+        end
+        v = verify(
+            rest[1];
+            dest=rest[2],
+            entry=get(opts, "entry", nothing),
+            julia=get(opts, "julia", nothing),
+        )
+        println(
+            v.ok ? "verified: " : "not verified: ",
+            "$(length(v.matched))/$(v.compared) point(s) matched, network $(v.network)",
+        )
+        isempty(v.differs) || println("  differ: ", join(v.differs, ", "))
+        isempty(v.absent) || println("  not produced: ", join(v.absent, ", "))
+        v.event === nothing || println("  event: ", v.event)
+        println("  log: ", v.log)
+        return v.ok ? 0 : 1
     end
     return usage()
 end
